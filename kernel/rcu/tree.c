@@ -2114,16 +2114,15 @@ rcu_report_qs_rnp(unsigned long mask, struct rcu_state *rsp,
  * irqs disabled, and this lock is released upon return, but irqs remain
  * disabled.
  */
-static void rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
+static void __maybe_unused rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
 				      struct rcu_node *rnp, unsigned long flags)
 	__releases(rnp->lock)
 {
-	unsigned long gps;
 	unsigned long mask;
 	struct rcu_node *rnp_p;
 
-	if (rcu_state_p == &rcu_sched_state || rsp != rcu_state_p ||
-	    rnp->qsmask != 0 || rcu_preempt_blocked_readers_cgp(rnp)) {
+	WARN_ON_ONCE(rsp == &rcu_bh_state || rsp == &rcu_sched_state);
+	if (rnp->qsmask != 0 || rcu_preempt_blocked_readers_cgp(rnp)) {
 		raw_spin_unlock_irqrestore(&rnp->lock, flags);
 		return;  /* Still need more quiescent states! */
 	}
@@ -2131,20 +2130,20 @@ static void rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
 	rnp_p = rnp->parent;
 	if (rnp_p == NULL) {
 		/*
-		 * Only one rcu_node structure in the tree, so don't
-		 * try to report up to its nonexistent parent!
+		 * Either there is only one rcu_node in the tree,
+		 * or tasks were kicked up to root rcu_node due to
+		 * CPUs going offline.
 		 */
 		rcu_report_qs_rsp(rsp, flags);
 		return;
 	}
 
-	/* Report up the rest of the hierarchy, tracking current ->gpnum. */
-	gps = rnp->gpnum;
+	/* Report up the rest of the hierarchy. */
 	mask = rnp->grpmask;
 	raw_spin_unlock(&rnp->lock);	/* irqs remain disabled. */
 	raw_spin_lock(&rnp_p->lock);	/* irqs already disabled. */
 	smp_mb__after_unlock_lock();
-	rcu_report_qs_rnp(mask, rsp, rnp_p, gps, flags);
+	rcu_report_qs_rnp(mask, rsp, rnp_p, flags);
 }
 
 /*
