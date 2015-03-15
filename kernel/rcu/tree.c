@@ -2177,6 +2177,7 @@ static void rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
 				      struct rcu_node *rnp, unsigned long flags)
 	__releases(rnp->lock)
 {
+	unsigned long gps;
 	unsigned long mask;
 	struct rcu_node *rnp_p;
 
@@ -2196,12 +2197,13 @@ static void rcu_report_unblock_qs_rnp(struct rcu_state *rsp,
 		return;
 	}
 
-	/* Report up the rest of the hierarchy. */
+	/* Report up the rest of the hierarchy, tracking current ->gpnum. */
+	gps = rnp->gpnum;
 	mask = rnp->grpmask;
 	raw_spin_unlock(&rnp->lock);	/* irqs remain disabled. */
 	raw_spin_lock(&rnp_p->lock);	/* irqs already disabled. */
 	smp_mb__after_unlock_lock();
-	rcu_report_qs_rnp(mask, rsp, rnp_p, flags);
+	rcu_report_qs_rnp(mask, rsp, rnp_p, gps, flags);
 }
 
 /*
@@ -2729,8 +2731,8 @@ static void force_qs_rnp(struct rcu_state *rsp,
 			}
 		}
 		if (mask != 0) {
-			/* Idle/offline CPUs, report. */
-			rcu_report_qs_rnp(mask, rsp, rnp, flags);
+			/* Idle/offline CPUs, report (releases rnp->lock. */
+			rcu_report_qs_rnp(mask, rsp, rnp, rnp->gpnum, flags);
 		} else {
 			/* Nothing to do here, so just drop the lock. */
 			raw_spin_unlock_irqrestore(&rnp->lock, flags);
