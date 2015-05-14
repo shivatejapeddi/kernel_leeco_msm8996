@@ -531,9 +531,13 @@ struct perf_cpu_context {
 	struct perf_event_context	*task_ctx;
 	int				active_oncpu;
 	int				exclusive;
+
+	raw_spinlock_t			hrtimer_lock;
 	struct hrtimer			hrtimer;
 	ktime_t				hrtimer_interval;
 	struct list_head		rotation_list;
+	unsigned int			hrtimer_active;
+
 	struct pmu			*unique_pmu;
 	struct perf_cgroup		*cgrp;
 };
