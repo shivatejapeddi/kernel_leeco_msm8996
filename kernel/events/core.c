@@ -775,24 +775,21 @@ perf_cgroup_mark_enabled(struct perf_event *event,
 static enum hrtimer_restart perf_cpu_hrtimer_handler(struct hrtimer *hr)
 {
 	struct perf_cpu_context *cpuctx;
-	enum hrtimer_restart ret = HRTIMER_NORESTART;
 	int rotations = 0;
 
 	WARN_ON(!irqs_disabled());
 
 	cpuctx = container_of(hr, struct perf_cpu_context, hrtimer);
-
 	rotations = perf_rotate_context(cpuctx);
 
-	/*
-	 * arm timer if needed
-	 */
-	if (rotations) {
+	raw_spin_lock(&cpuctx->hrtimer_lock);
+	if (rotations)
 		hrtimer_forward_now(hr, cpuctx->hrtimer_interval);
-		ret = HRTIMER_RESTART;
-	}
+	else
+		cpuctx->hrtimer_active = 0;
+	raw_spin_unlock(&cpuctx->hrtimer_lock);
 
-	return ret;
+	return rotations ? HRTIMER_RESTART : HRTIMER_NORESTART;
 }
 
 /* CPU is going down */
@@ -843,25 +840,30 @@ static void __perf_cpu_hrtimer_init(struct perf_cpu_context *cpuctx, int cpu)
 
 	cpuctx->hrtimer_interval = ns_to_ktime(NSEC_PER_MSEC * timer);
 
-	hrtimer_init(hr, CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
+	raw_spin_lock_init(&cpuctx->hrtimer_lock);
+	hrtimer_init(hr, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_PINNED);
 	hr->function = perf_cpu_hrtimer_handler;
 }
 
-static void perf_cpu_hrtimer_restart(struct perf_cpu_context *cpuctx)
+static int perf_cpu_hrtimer_restart(struct perf_cpu_context *cpuctx)
 {
 	struct hrtimer *hr = &cpuctx->hrtimer;
 	struct pmu *pmu = cpuctx->ctx.pmu;
+	unsigned long flags;
 
 	/* not for SW PMU */
 	if (pmu->task_ctx_nr == perf_sw_context)
-		return;
+		return 0;
 
-	if (hrtimer_active(hr))
-		return;
+	raw_spin_lock_irqsave(&cpuctx->hrtimer_lock, flags);
+	if (!cpuctx->hrtimer_active) {
+		cpuctx->hrtimer_active = 1;
+		hrtimer_forward_now(hr, cpuctx->hrtimer_interval);
+		hrtimer_start_expires(hr, HRTIMER_MODE_ABS_PINNED);
+	}
+	raw_spin_unlock_irqrestore(&cpuctx->hrtimer_lock, flags);
 
-	if (!hrtimer_callback_running(hr))
-		__hrtimer_start_range_ns(hr, cpuctx->hrtimer_interval,
-					 0, HRTIMER_MODE_REL_PINNED, 0);
+	return 0;
 }
 
 void perf_pmu_disable(struct pmu *pmu)
