@@ -13,19 +13,23 @@
 
 #ifdef CONFIG_GENERIC_CLOCKEVENTS
 extern void __init tick_init(void);
-extern void tick_freeze(void);
-extern void tick_unfreeze(void);
 /* Should be core only, but ARM BL switcher requires it */
 extern void tick_suspend_local(void);
 /* Should be core only, but XEN resume magic and ARM BL switcher require it */
 extern void tick_resume_local(void);
 #else /* CONFIG_GENERIC_CLOCKEVENTS */
 static inline void tick_init(void) { }
-static inline void tick_freeze(void) { }
-static inline void tick_unfreeze(void) { }
 static inline void tick_suspend_local(void) { }
 static inline void tick_resume_local(void) { }
 #endif /* !CONFIG_GENERIC_CLOCKEVENTS */
+
+#if defined(CONFIG_GENERIC_CLOCKEVENTS) && defined(CONFIG_SUSPEND)
+extern void tick_freeze(void);
+extern void tick_unfreeze(void);
+#else
+static inline void tick_freeze(void) { }
+static inline void tick_unfreeze(void) { }
+#endif
 
 #ifdef CONFIG_TICK_ONESHOT
 extern void tick_irq_enter(void);
