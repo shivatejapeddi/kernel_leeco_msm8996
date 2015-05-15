@@ -2071,9 +2071,6 @@ static void set_cpus_allowed_rt(struct task_struct *p,
 
 	BUG_ON(!rt_task(p));
 
-	if (!task_on_rq_queued(p))
-		return;
-
 	weight = cpumask_weight(new_mask);
 
 	/*
@@ -2081,7 +2078,10 @@ static void set_cpus_allowed_rt(struct task_struct *p,
 	 * can migrate or not.
 	 */
 	if ((p->nr_cpus_allowed > 1) == (weight > 1))
-		return;
+		goto done;
+
+	if (!task_on_rq_queued(p))
+		goto done;
 
 	rq = task_rq(p);
 
@@ -2100,6 +2100,10 @@ static void set_cpus_allowed_rt(struct task_struct *p,
 	}
 
 	update_rt_migration(&rq->rt);
+
+done:
+	cpumask_copy(&p->cpus_allowed, new_mask);
+	p->nr_cpus_allowed = weight;
 }
 
 /* Assumes rq->lock is held */
