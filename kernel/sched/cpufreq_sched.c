@@ -131,7 +131,24 @@ static int cpufreq_sched_thread(void *data)
 	}
     } while (!kthread_should_stop());
 
-    return 0;
+	do {
+		new_request = gd->requested_freq;
+		if (new_request == last_request) {
+			set_current_state(TASK_INTERRUPTIBLE);
+			schedule();
+		} else {
+			/*
+			 * if the frequency thread sleeps while waiting to be
+			 * unthrottled, start over to check for a newer request
+			 */
+			if (finish_last_request(gd))
+				continue;
+			last_request = new_request;
+			cpufreq_sched_try_driver_target(policy, new_request);
+		}
+	} while (!kthread_should_stop());
+
+	return 0;
 }
 
 static void cpufreq_sched_irq_work(struct irq_work *irq_work)
