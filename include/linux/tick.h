@@ -185,4 +185,5 @@ static inline void tick_nohz_task_switch(struct task_struct *tsk)
 	__tick_nohz_task_switch(tsk);
 }
 
+ktime_t *get_next_event_cpu(unsigned int cpu);
 #endif
