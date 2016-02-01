@@ -135,6 +135,8 @@ static int cpufreq_sched_thread(void *data)
 		new_request = gd->requested_freq;
 		if (new_request == last_request) {
 			set_current_state(TASK_INTERRUPTIBLE);
+			if (kthread_should_stop())
+				break;
 			schedule();
 		} else {
 			/*
@@ -256,32 +258,38 @@ static inline void clear_sched_freq(void)
 
 static int cpufreq_sched_policy_init(struct cpufreq_policy *policy)
 {
-    struct gov_data *gd;
-    int cpu;
+	struct gov_data *gd;
+	int cpu;
 
-    for_each_cpu(cpu, policy->cpus)
-	memset(&per_cpu(cpu_sched_capacity_reqs, cpu), 0,
-	       sizeof(struct sched_capacity_reqs));
+	for_each_cpu(cpu, policy->cpus)
+		memset(&per_cpu(cpu_sched_capacity_reqs, cpu), 0,
+		       sizeof(struct sched_capacity_reqs));
 
-    gd = kzalloc(sizeof(*gd), GFP_KERNEL);
-    if (!gd)
-	return -ENOMEM;
+	gd = kzalloc(sizeof(*gd), GFP_KERNEL);
+	if (!gd)
+		return -ENOMEM;
 
-    gd->throttle_nsec = policy->cpuinfo.transition_latency ?
-	        policy->cpuinfo.transition_latency :
-	        THROTTLE_NSEC;
-    pr_debug("%s: throttle threshold = %u [ns]\n",
-	  __func__, gd->throttle_nsec);
+	gd->throttle_nsec = policy->cpuinfo.transition_latency ?
+			    policy->cpuinfo.transition_latency :
+			    THROTTLE_NSEC;
+	pr_debug("%s: throttle threshold = %u [ns]\n",
+		  __func__, gd->throttle_nsec);
 
-    if (cpufreq_driver_is_slow()) {
-	cpufreq_driver_slow = true;
-	gd->task = kthread_create(cpufreq_sched_thread, policy,
-		      "kschedfreq:%d",
-		      cpumask_first(policy->related_cpus));
-	if (IS_ERR_OR_NULL(gd->task)) {
-	    pr_err("%s: failed to create kschedfreq thread\n",
-	           __func__);
-	    goto err;
+	policy->governor_data = gd;
+	if (cpufreq_driver_is_slow()) {
+		cpufreq_driver_slow = true;
+		gd->task = kthread_create(cpufreq_sched_thread, policy,
+					  "kschedfreq:%d",
+					  cpumask_first(policy->related_cpus));
+		if (IS_ERR_OR_NULL(gd->task)) {
+			pr_err("%s: failed to create kschedfreq thread\n",
+			       __func__);
+			goto err;
+		}
+		get_task_struct(gd->task);
+		kthread_bind_mask(gd->task, policy->related_cpus);
+		wake_up_process(gd->task);
+		init_irq_work(&gd->irq_work, cpufreq_sched_irq_work);
 	}
 	get_task_struct(gd->task);
 	kthread_bind_mask(gd->task, policy->related_cpus);
@@ -289,14 +297,14 @@ static int cpufreq_sched_policy_init(struct cpufreq_policy *policy)
 	init_irq_work(&gd->irq_work, cpufreq_sched_irq_work);
     }
 
-    policy->governor_data = gd;
-    set_sched_freq();
+	set_sched_freq();
 
     return 0;
 
 err:
-    kfree(gd);
-    return -ENOMEM;
+	policy->governor_data = NULL;
+	kfree(gd);
+	return -ENOMEM;
 }
 
 static int cpufreq_sched_policy_exit(struct cpufreq_policy *policy)
