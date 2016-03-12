@@ -233,7 +233,7 @@ void cpuidle_uninstall_idle_handler(void)
 {
 	if (enabled_devices) {
 		initialized = 0;
-		wake_up_all_idle_cpus();
+		wake_up_idle_cpus(cpu_online_mask);
 	}
 
 	/*
@@ -565,6 +565,7 @@ static int cpuidle_latency_notify(struct notifier_block *b,
 	smp_call_function_many(cpus, smp_callback, NULL, 1);
 	preempt_enable();
 
+	wake_up_idle_cpus((struct cpumask *)v);
 	return NOTIFY_OK;
 }
 
