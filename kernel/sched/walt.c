@@ -782,8 +782,8 @@ void walt_mark_task_starting(struct task_struct *p)
 	return;
     }
 
-    wallclock = ktime_get_ns();
-    p->ravg.mark_start = wallclock;
+	wallclock = walt_ktime_clock();
+	p->ravg.mark_start = wallclock;
 }
 
 void walt_set_window_start(struct rq *rq)
@@ -791,8 +791,18 @@ void walt_set_window_start(struct rq *rq)
     int cpu = cpu_of(rq);
     struct rq *sync_rq = cpu_rq(sync_cpu);
 
-    if (rq->window_start)
-	return;
+	if (rq->window_start)
+		return;
+
+	if (cpu == sync_cpu) {
+		rq->window_start = walt_ktime_clock();
+	} else {
+		raw_spin_unlock(&rq->lock);
+		double_rq_lock(rq, sync_rq);
+		rq->window_start = cpu_rq(sync_cpu)->window_start;
+		rq->curr_runnable_sum = rq->prev_runnable_sum = 0;
+		raw_spin_unlock(&sync_rq->lock);
+	}
 
     if (cpu == sync_cpu) {
 	rq->window_start = ktime_get_ns();
@@ -829,7 +839,7 @@ void walt_fixup_busy_time(struct task_struct *p, int new_cpu)
     if (p->state == TASK_WAKING)
 	double_rq_lock(src_rq, dest_rq);
 
-    wallclock = ktime_get_ns();
+	wallclock = walt_ktime_clock();
 
     walt_update_task_ravg(task_rq(p)->curr, task_rq(p),
 	    TASK_UPDATE, wallclock, 0);
@@ -1101,12 +1111,12 @@ static int cpufreq_notifier_trans(struct notifier_block *nb,
     for_each_cpu(i, &cpu_rq(cpu)->freq_domain_cpumask) {
 	struct rq *rq = cpu_rq(i);
 
-	raw_spin_lock_irqsave(&rq->lock, flags);
-	walt_update_task_ravg(rq->curr, rq, TASK_UPDATE,
-		      ktime_get_ns(), 0);
-	rq->cur_freq = new_freq;
-	raw_spin_unlock_irqrestore(&rq->lock, flags);
-    }
+		raw_spin_lock_irqsave(&rq->lock, flags);
+		walt_update_task_ravg(rq->curr, rq, TASK_UPDATE,
+				      walt_ktime_clock(), 0);
+		rq->cur_freq = new_freq;
+		raw_spin_unlock_irqrestore(&rq->lock, flags);
+	}
 
     return 0;
 }
