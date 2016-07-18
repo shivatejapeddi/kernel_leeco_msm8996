@@ -100,3 +100,10 @@ config FB_MSM_MDSS_STATIC_MBL
 	This configuration will bypass device tree defined max brightness level
 	setting. Instead, this will set 255 as value regardless the original value.
 
+config FB_MSM_MDSS_KCAL_CTRL
+	depends on FB_MSM_MDSS
+	bool "MDSS color control"
+	default n
+	---help---
+	  Enable sysfs for rgb/lut control for mdss-mdp display controllers
+	  in the MDSS sub-system.
