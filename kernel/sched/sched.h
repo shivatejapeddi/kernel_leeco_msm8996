@@ -1938,6 +1938,7 @@ static inline u64 irq_time_read(int cpu)
  */
 extern bool task_may_not_preempt(struct task_struct *task, int cpu);
 
+<<<<<<< HEAD
 #ifdef CONFIG_CPU_FREQ
 DECLARE_PER_CPU(struct update_util_data *, cpufreq_update_util_data);
 
