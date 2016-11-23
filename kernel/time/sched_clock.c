@@ -31,6 +31,10 @@ struct clock_data {
 
 static struct hrtimer sched_clock_timer;
 static int irqtime = -1;
+static u64 suspend_ns;
+static u64 suspend_cycles;
+static u64 resume_cycles;
+
 
 core_param(irqtime, irqtime, int, 0400);
 
