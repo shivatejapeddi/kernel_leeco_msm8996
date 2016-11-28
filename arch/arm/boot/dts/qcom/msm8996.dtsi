@@ -183,7 +183,7 @@
 					763 925
 				>;
 				idle-cost-data = <
-			  		2 2 0
+			                 2 2 0
 				>;
 			};
 			CPU_COST_1: core-cost1 {
@@ -1999,9 +1999,8 @@
 		reg = <0x9830000 0x1000>;
 		reg-names = "wdt-base";
 		interrupts = <0 28 0>, <0 29 0>;
-		qcom,bark-time = <13000>;
+                qcom,bark-time = <13000>;
 		qcom,pet-time = <8000>;
-		qcom,ipi-ping;
 		qcom,wakeup-enable;
 	};
 
