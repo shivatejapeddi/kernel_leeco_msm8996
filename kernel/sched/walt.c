@@ -62,8 +62,6 @@ static unsigned int max_possible_freq = 1;
  */
 static unsigned int min_max_freq = 1;
 
-static unsigned int max_capacity = 1024;
-static unsigned int min_capacity = 1024;
 static unsigned int max_load_scale_factor = 1024;
 static unsigned int max_possible_capacity = 1024;
 
@@ -879,39 +877,6 @@ void walt_fixup_busy_time(struct task_struct *p, int new_cpu)
 	double_rq_unlock(src_rq, dest_rq);
 }
 
-/* Keep track of max/min capacity possible across CPUs "currently" */
-static void __update_min_max_capacity(void)
-{
-    int i;
-    int max = 0, min = INT_MAX;
-
-    for_each_online_cpu(i) {
-	if (cpu_rq(i)->capacity > max)
-	    max = cpu_rq(i)->capacity;
-	if (cpu_rq(i)->capacity < min)
-	    min = cpu_rq(i)->capacity;
-    }
-
-    max_capacity = max;
-    min_capacity = min;
-}
-
-static void update_min_max_capacity(void)
-{
-    unsigned long flags;
-    int i;
-
-    local_irq_save(flags);
-    for_each_possible_cpu(i)
-	raw_spin_lock(&cpu_rq(i)->lock);
-
-    __update_min_max_capacity();
-
-    for_each_possible_cpu(i)
-	raw_spin_unlock(&cpu_rq(i)->lock);
-    local_irq_restore(flags);
-}
-
 /*
  * Return 'capacity' of a cpu in reference to "least" efficient cpu, such that
  * least efficient cpu gets capacity of 1024
@@ -985,18 +950,67 @@ static int compute_load_scale_factor(int cpu)
 static int cpufreq_notifier_policy(struct notifier_block *nb,
 	unsigned long val, void *data)
 {
-    struct cpufreq_policy *policy = (struct cpufreq_policy *)data;
-    int i, update_max = 0;
-    u64 highest_mpc = 0, highest_mplsf = 0;
-    const struct cpumask *cpus = policy->related_cpus;
-    unsigned int orig_min_max_freq = min_max_freq;
-    unsigned int orig_max_possible_freq = max_possible_freq;
-    /* Initialized to policy->max in case policy->related_cpus is empty! */
-    unsigned int orig_max_freq = policy->max;
+	struct cpufreq_policy *policy = (struct cpufreq_policy *)data;
+	int i, update_max = 0;
+	u64 highest_mpc = 0, highest_mplsf = 0;
+	const struct cpumask *cpus = policy->related_cpus;
+	unsigned int orig_min_max_freq = min_max_freq;
+	unsigned int orig_max_possible_freq = max_possible_freq;
+	/* Initialized to policy->max in case policy->related_cpus is empty! */
+	unsigned int orig_max_freq = policy->max;
 
-    if (val != CPUFREQ_NOTIFY && val != CPUFREQ_REMOVE_POLICY &&
-			val != CPUFREQ_CREATE_POLICY)
-	return 0;
+	if (val != CPUFREQ_NOTIFY)
+		return 0;
+
+	for_each_cpu(i, policy->related_cpus) {
+		cpumask_copy(&cpu_rq(i)->freq_domain_cpumask,
+			     policy->related_cpus);
+		orig_max_freq = cpu_rq(i)->max_freq;
+		cpu_rq(i)->min_freq = policy->min;
+		cpu_rq(i)->max_freq = policy->max;
+		cpu_rq(i)->cur_freq = policy->cur;
+		cpu_rq(i)->max_possible_freq = policy->cpuinfo.max_freq;
+	}
+
+	max_possible_freq = max(max_possible_freq, policy->cpuinfo.max_freq);
+	if (min_max_freq == 1)
+		min_max_freq = UINT_MAX;
+	min_max_freq = min(min_max_freq, policy->cpuinfo.max_freq);
+	BUG_ON(!min_max_freq);
+	BUG_ON(!policy->max);
+
+	/* Changes to policy other than max_freq don't require any updates */
+	if (orig_max_freq == policy->max)
+		return 0;
+
+	/*
+	 * A changed min_max_freq or max_possible_freq (possible during bootup)
+	 * needs to trigger re-computation of load_scale_factor and capacity for
+	 * all possible cpus (even those offline). It also needs to trigger
+	 * re-computation of nr_big_task count on all online cpus.
+	 *
+	 * A changed rq->max_freq otoh needs to trigger re-computation of
+	 * load_scale_factor and capacity for just the cluster of cpus involved.
+	 * Since small task definition depends on max_load_scale_factor, a
+	 * changed load_scale_factor of one cluster could influence
+	 * classification of tasks in another cluster. Hence a changed
+	 * rq->max_freq will need to trigger re-computation of nr_big_task
+	 * count on all online cpus.
+	 *
+	 * While it should be sufficient for nr_big_tasks to be
+	 * re-computed for only online cpus, we have inadequate context
+	 * information here (in policy notifier) with regard to hotplug-safety
+	 * context in which notification is issued. As a result, we can't use
+	 * get_online_cpus() here, as it can lead to deadlock. Until cpufreq is
+	 * fixed up to issue notification always in hotplug-safe context,
+	 * re-compute nr_big_task for all possible cpus.
+	 */
+
+	if (orig_min_max_freq != min_max_freq ||
+		orig_max_possible_freq != max_possible_freq) {
+			cpus = cpu_possible_mask;
+			update_max = 1;
+	}
 
     if (val == CPUFREQ_REMOVE_POLICY || val == CPUFREQ_CREATE_POLICY) {
 	update_min_max_capacity();
@@ -1092,9 +1106,7 @@ static int cpufreq_notifier_policy(struct notifier_block *nb,
 	max_load_scale_factor = highest_mplsf;
     }
 
-    __update_min_max_capacity();
-
-    return 0;
+	return 0;
 }
 
 static int cpufreq_notifier_trans(struct notifier_block *nb,
