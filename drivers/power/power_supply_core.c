@@ -91,6 +91,9 @@ int power_supply_set_current_limit(struct power_supply *psy, int limit)
 {
 	const union power_supply_propval ret = {limit,};
 
+    pr_err("Current charging limit:%d uA\n",limit);
+    dump_stack();
+
 	if (psy->set_property)
 		return psy->set_property(psy, POWER_SUPPLY_PROP_CURRENT_MAX,
 								&ret);

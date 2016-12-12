@@ -499,7 +499,7 @@ module_param_named(
 	int, S_IRUSR | S_IWUSR
 );
 
-static int smbchg_default_hvdcp_icl_ma = 2800;
+static int smbchg_default_hvdcp_icl_ma = 3200;
 module_param_named(
 	default_hvdcp_icl_ma, smbchg_default_hvdcp_icl_ma,
 	int, S_IRUSR | S_IWUSR
@@ -3531,18 +3531,21 @@ static int smbchg_quick_charge_icl_set(struct smbchg_chip *chip,
 {
 	int rc = 0;
 
+    pr_err("Charge mode selected %d\n", quick_charge_val);
+
 	if (quick_charge_val < 0) {
-		dev_err(chip->dev, "Unsupported level selected %d\n", quick_charge_val);
+		dev_err(chip->dev, "Unsupported charging level selected %d\n", quick_charge_val);
 		return -EINVAL;
 	}
 
-	if (chip->prev_quick_charge_mode == quick_charge_val)
+	if (chip->prev_quick_charge_mode == quick_charge_val) 
 		return 0;
 	/* when change charge mode, rerun aicl */
 	hvdcp_aicl_rerun = true;
 
 	mutex_lock(&chip->quick_charge_mode_lock);
 	if (quick_charge_val == 0) {
+		pr_err("change charge mode to quick mode\n");
 		rc = vote(chip->usb_icl_votable, QUICK_CHARGE_MODE_VOTER, false, 0);
 		if (rc < 0)
 			pr_err("Couldn't disable quick charge mode vote rc=%d\n",
@@ -3553,7 +3556,7 @@ static int smbchg_quick_charge_icl_set(struct smbchg_chip *chip,
 			pr_err("Couldn't disable quick charge mode vote rc=%d\n",
 				rc);
 	} else {
-		pr_smb(PR_STATUS, "change charge mode to normal mode to limit icl\n");
+		pr_err("change charge mode to normal mode to limit icl\n");
 		rc = vote(chip->usb_icl_votable, QUICK_CHARGE_MODE_VOTER, true,
 					QUICK_CHARGE_MODE_CURRENT);
 		if (rc < 0)
@@ -5435,7 +5438,7 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
         }
     }
 
-	pr_smb(PR_STATUS, "Type %d: setting mA = %d\n",
+	pr_err("Charge Type %d: setting mA = %d\n",
 		type, current_limit_ma);
 	rc = vote(chip->usb_icl_votable, PSY_ICL_VOTER, true,
 				current_limit_ma);
@@ -9638,15 +9641,21 @@ static void smbchg_letv_pd_set_vol_cur_work(struct work_struct *work)
 			POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX, &prop);
 		fcc_current = chip->fastchg_current_ma + prop.intval / 1000;
 	}
-	if ((chip->prev_black_call_mode == 0) && (chip->prev_quick_charge_mode == 0))
+	if ((chip->prev_black_call_mode == 0) && (chip->prev_quick_charge_mode == 0)) {
 		usb_icl = (int)chip->usb_thermal_mitigation[chip->usb_therm_lvl_sel];
-	else if (chip->prev_black_call_mode == 1)
+        pr_err("Charge mode: Quick. Max Current %d mA. USB thermal level %d\n", usb_icl, chip->usb_therm_lvl_sel);
+    }
+	else if (chip->prev_black_call_mode == 1) {
 		usb_icl = BLACK_CALL_MODE_CURRENT;
-	else
+        pr_err("Charge mode: Black Call. Max Current %d mA.", usb_icl);
+    }
+	else {
 		usb_icl = QUICK_CHARGE_MODE_CURRENT;
+        pr_err("Charge mode: Slow. Max Current %d mA.", usb_icl);
+    }
 	vbus_set = smbchg_optimal_pd_vbus(chip, fcc_current, usb_icl, bat_vol);
 
-	pr_smb(PR_STATUS, "vbus:%d, vbat:%d, cur:%d, setvbus:%d, prevbus:%d, fcc:%d\n",
+	pr_err("vbus:%d, vbat:%d, cur:%d, setvbus:%d, prevbus:%d, fcc:%d\n",
 		vbus_vol, bat_vol, chg_cur, vbus_set, pre_pd_vol, fcc_current);
 	new_pd_vol = vbus_set;
 	if (pre_pd_vol != new_pd_vol) {
@@ -10001,7 +10010,7 @@ static int smbchg_probe(struct spmi_device *spmi)
 #ifdef CONFIG_PRODUCT_LE_X2
 	chip->usb_prev_therm_lvl = 0;
 	chip->prev_black_call_mode = 0;
-	chip->prev_quick_charge_mode = 0;
+	chip->prev_quick_charge_mode = 1;
 #endif
 	dev_set_drvdata(&spmi->dev, chip);
 
