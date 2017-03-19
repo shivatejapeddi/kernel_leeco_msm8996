@@ -907,16 +907,10 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 	mdss_dsi_panel_on_hdmi(ctrl, pinfo);
 
-	/* Ensure low persistence mode is set as before */
-	mdss_dsi_panel_apply_display_setting(pdata, pinfo->persist_mode);
-
-<<<<<<< HEAD
-=======
 	if (pdata->event_handler)
 		pdata->event_handler(pdata, MDSS_EVENT_UPDATE_LIVEDISPLAY,
 				(void *)(unsigned long) MODE_UPDATE_ALL);
 
->>>>>>> f36e735... video: mdss: LiveDisplay driver
 end:
 	pr_debug("%s:-\n", __func__);
 	return ret;
