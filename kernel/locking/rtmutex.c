@@ -1294,6 +1294,19 @@ rt_mutex_slowlock(struct rt_mutex *lock, int state,
 	return ret;
 }
 
+static inline int __rt_mutex_slowtrylock(struct rt_mutex *lock)
+{
+	int ret = try_to_take_rt_mutex(lock, current, NULL);
+
+	/*
+	 * try_to_take_rt_mutex() sets the lock waiters bit
+	 * unconditionally. Clean this up.
+	 */
+	fixup_rt_mutex_waiters(lock);
+
+	return ret;
+}
+
 /*
  * Slow path try-lock function:
  */
@@ -1316,13 +1329,7 @@ static inline int rt_mutex_slowtrylock(struct rt_mutex *lock)
 	 */
 	raw_spin_lock_irqsave(&lock->wait_lock, flags);
 
-	ret = try_to_take_rt_mutex(lock, current, NULL);
-
-	/*
-	 * try_to_take_rt_mutex() sets the lock waiters bit
-	 * unconditionally. Clean this up.
-	 */
-	fixup_rt_mutex_waiters(lock);
+	ret = __rt_mutex_slowtrylock(lock);
 
 	raw_spin_unlock_irqrestore(&lock->wait_lock, flags);
 
@@ -1490,24 +1497,16 @@ int __sched rt_mutex_lock_interruptible(struct rt_mutex *lock)
 EXPORT_SYMBOL_GPL(rt_mutex_lock_interruptible);
 
 /*
- * Futex variant with full deadlock detection.
- * Futex variants must not use the fast-path, see __rt_mutex_futex_unlock().
- */
-int __sched rt_mutex_timed_futex_lock(struct rt_mutex *lock,
-			      struct hrtimer_sleeper *timeout)
-{
-	might_sleep();
-
-	return rt_mutex_slowlock(lock, TASK_INTERRUPTIBLE,
-				 timeout, RT_MUTEX_FULL_CHAINWALK);
-}
-
-/*
  * Futex variant, must not use fastpath.
  */
 int __sched rt_mutex_futex_trylock(struct rt_mutex *lock)
 {
 	return rt_mutex_slowtrylock(lock);
+}
+
+int __sched __rt_mutex_futex_trylock(struct rt_mutex *lock)
+{
+	return __rt_mutex_slowtrylock(lock);
 }
 
 /**
@@ -1679,6 +1678,37 @@ void rt_mutex_proxy_unlock(struct rt_mutex *lock,
 	rt_mutex_set_owner(lock, NULL);
 }
 
+int __rt_mutex_start_proxy_lock(struct rt_mutex *lock,
+			      struct rt_mutex_waiter *waiter,
+			      struct task_struct *task)
+{
+	int ret;
+
+	if (try_to_take_rt_mutex(lock, task, NULL))
+		return 1;
+
+	/* We enforce deadlock detection for futexes */
+	ret = task_blocks_on_rt_mutex(lock, waiter, task,
+				      RT_MUTEX_FULL_CHAINWALK);
+
+	if (ret && !rt_mutex_owner(lock)) {
+		/*
+		 * Reset the return value. We might have
+		 * returned with -EDEADLK and the owner
+		 * released the lock while we were walking the
+		 * pi chain.  Let the waiter sort it out.
+		 */
+		ret = 0;
+	}
+
+	if (unlikely(ret))
+		remove_waiter(lock, waiter);
+
+	debug_rt_mutex_print_deadlock(waiter);
+
+	return ret;
+}
+
 /**
  * rt_mutex_start_proxy_lock() - Start lock acquisition for another task
  * @lock:		the rt_mutex to take
@@ -1699,32 +1729,8 @@ int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
 	int ret;
 
 	raw_spin_lock_irq(&lock->wait_lock);
-
-	if (try_to_take_rt_mutex(lock, task, NULL)) {
-		raw_spin_unlock_irq(&lock->wait_lock);
-		return 1;
-	}
-
-	/* We enforce deadlock detection for futexes */
-	ret = task_blocks_on_rt_mutex(lock, waiter, task,
-				      RT_MUTEX_FULL_CHAINWALK);
-
-	if (ret && !rt_mutex_owner(lock)) {
-		/*
-		 * Reset the return value. We might have
-		 * returned with -EDEADLK and the owner
-		 * released the lock while we were walking the
-		 * pi chain.  Let the waiter sort it out.
-		 */
-		ret = 0;
-	}
-
-	if (unlikely(ret))
-		remove_waiter(lock, waiter);
-
+	ret = __rt_mutex_start_proxy_lock(lock, waiter, task);
 	raw_spin_unlock_irq(&lock->wait_lock);
-
-	debug_rt_mutex_print_deadlock(waiter);
 
 	return ret;
 }
@@ -1779,12 +1785,6 @@ int rt_mutex_wait_proxy_lock(struct rt_mutex *lock,
 	/* sleep on the mutex */
 	ret = __rt_mutex_slowlock(lock, TASK_INTERRUPTIBLE, to, waiter);
 
-	/*
-	 * try_to_take_rt_mutex() sets the waiter bit unconditionally. We might
-	 * have to fix that up.
-	 */
-	fixup_rt_mutex_waiters(lock);
-
 	raw_spin_unlock_irq(&lock->wait_lock);
 
 	return ret;
@@ -1824,6 +1824,13 @@ bool rt_mutex_cleanup_proxy_lock(struct rt_mutex *lock,
 		fixup_rt_mutex_waiters(lock);
 		cleanup = true;
 	}
+
+	/*
+	 * try_to_take_rt_mutex() sets the waiter bit unconditionally. We might
+	 * have to fix that up.
+	 */
+	fixup_rt_mutex_waiters(lock);
+
 	raw_spin_unlock_irq(&lock->wait_lock);
 
 	return cleanup;
