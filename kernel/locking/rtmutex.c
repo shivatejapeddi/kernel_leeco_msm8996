@@ -370,24 +370,6 @@ static void __rt_mutex_adjust_prio(struct task_struct *task)
 }
 
 /*
- * Adjust task priority (undo boosting). Called from the exit path of
- * rt_mutex_slowunlock() and rt_mutex_slowlock().
- *
- * (Note: We do this outside of the protection of lock->wait_lock to
- * allow the lock to be taken while or before we readjust the priority
- * of task. We do not use the spin_xx_mutex() variants here as we are
- * outside of the debug path.)
- */
-void rt_mutex_adjust_prio(struct task_struct *task)
-{
-	unsigned long flags;
-
-	raw_spin_lock_irqsave(&task->pi_lock, flags);
-	__rt_mutex_adjust_prio(task);
-	raw_spin_unlock_irqrestore(&task->pi_lock, flags);
-}
-
-/*
  * Deadlock detection is conditional:
  *
  * If CONFIG_DEBUG_RT_MUTEXES=n, deadlock detection is only conducted
@@ -1048,6 +1030,7 @@ static void mark_wakeup_next_waiter(struct wake_q_head *wake_q,
 	 * lock->wait_lock.
 	 */
 	rt_mutex_dequeue_pi(current, waiter);
+	__rt_mutex_adjust_prio(current);
 
 	/*
 	 * As we are waking up the top waiter, and the waiter stays
@@ -1338,7 +1321,8 @@ static inline int rt_mutex_slowtrylock(struct rt_mutex *lock)
 
 /*
  * Slow path to release a rt-mutex.
- * Return whether the current task needs to undo a potential priority boosting.
+ *
+ * Return whether the current task needs to call rt_mutex_postunlock().
  */
 static bool __sched rt_mutex_slowunlock(struct rt_mutex *lock,
 					struct wake_q_head *wake_q)
@@ -1397,10 +1381,19 @@ static bool __sched rt_mutex_slowunlock(struct rt_mutex *lock,
 	 */
 	mark_wakeup_next_waiter(wake_q, lock);
 
+	/*
+	 * We should deboost before waking the top waiter task such that
+	 * we don't run two tasks with the 'same' priority. This however
+	 * can lead to prio-inversion if we would get preempted after
+	 * the deboost but before waking our high-prio task, hence the
+	 * preempt_disable before unlock. Pairs with preempt_enable() in
+	 * rt_mutex_postunlock();
+	 */
+	preempt_disable();
+
 	raw_spin_unlock_irqrestore(&lock->wait_lock, flags);
 
-	/* check PI boosting */
-	return true;
+	return true; /* call rt_mutex_postunlock() */
 }
 
 /*
@@ -1446,24 +1439,29 @@ rt_mutex_fasttrylock(struct rt_mutex *lock,
 	return slowfn(lock);
 }
 
+/*
+ * Performs the wakeup of the the top-waiter and re-enables preemption.
+ */
+void rt_mutex_postunlock(struct wake_q_head *wake_q)
+{
+	wake_up_q(wake_q);
+
+	/* Pairs with preempt_disable() in rt_mutex_slowunlock() */
+	preempt_enable();
+}
+
 static inline void
 rt_mutex_fastunlock(struct rt_mutex *lock,
 		    bool (*slowfn)(struct rt_mutex *lock,
 				   struct wake_q_head *wqh))
 {
 	WAKE_Q(wake_q);
-	bool deboost;
 
 	if (likely(rt_mutex_cmpxchg_release(lock, current, NULL)))
 		return;
 
-	deboost = slowfn(lock, &wake_q);
-
-	wake_up_q(&wake_q);
-
-	/* Undo pi boosting if necessary: */
-	if (deboost)
-		rt_mutex_adjust_prio(current);
+	if (slowfn(lock, &wake_q))
+		rt_mutex_postunlock(&wake_q);
 }
 
 /**
@@ -1580,23 +1578,28 @@ bool __sched __rt_mutex_futex_unlock(struct rt_mutex *lock,
 		return false; /* done */
 	}
 
+	/*
+	 * We've already deboosted, mark_wakeup_next_waiter() will
+	 * retain preempt_disabled when we drop the wait_lock, to
+	 * avoid inversion prior to the wakeup.  preempt_disable()
+	 * therein pairs with rt_mutex_postunlock().
+	 */
 	mark_wakeup_next_waiter(wake_q, lock);
-	return true; /* deboost and wakeups */
+
+	return true; /* call postunlock() */
 }
 
 void __sched rt_mutex_futex_unlock(struct rt_mutex *lock)
 {
 	WAKE_Q(wake_q);
-	bool deboost;
+	bool postunlock;
 
 	raw_spin_lock_irq(&lock->wait_lock);
-	deboost = __rt_mutex_futex_unlock(lock, &wake_q);
+	postunlock = __rt_mutex_futex_unlock(lock, &wake_q);
 	raw_spin_unlock_irq(&lock->wait_lock);
 
-	if (deboost) {
-		wake_up_q(&wake_q);
-		rt_mutex_adjust_prio(current);
-	}
+	if (postunlock)
+		rt_mutex_postunlock(&wake_q);
 }
 
 /**
@@ -1779,12 +1782,14 @@ int rt_mutex_wait_proxy_lock(struct rt_mutex *lock,
 	int ret;
 
 	raw_spin_lock_irq(&lock->wait_lock);
-
-	set_current_state(TASK_INTERRUPTIBLE);
-
 	/* sleep on the mutex */
+	set_current_state(TASK_INTERRUPTIBLE);
 	ret = __rt_mutex_slowlock(lock, TASK_INTERRUPTIBLE, to, waiter);
-
+	/*
+	 * try_to_take_rt_mutex() sets the waiter bit unconditionally. We might
+	 * have to fix that up.
+	 */
+	fixup_rt_mutex_waiters(lock);
 	raw_spin_unlock_irq(&lock->wait_lock);
 
 	return ret;
@@ -1816,15 +1821,25 @@ bool rt_mutex_cleanup_proxy_lock(struct rt_mutex *lock,
 
 	raw_spin_lock_irq(&lock->wait_lock);
 	/*
+	 * Do an unconditional try-lock, this deals with the lock stealing
+	 * state where __rt_mutex_futex_unlock() -> mark_wakeup_next_waiter()
+	 * sets a NULL owner.
+	 *
+	 * We're not interested in the return value, because the subsequent
+	 * test on rt_mutex_owner() will infer that. If the trylock succeeded,
+	 * we will own the lock and it will have removed the waiter. If we
+	 * failed the trylock, we're still not owner and we need to remove
+	 * ourselves.
+	 */
+	try_to_take_rt_mutex(lock, current, waiter);
+	/*
 	 * Unless we're the owner; we're still enqueued on the wait_list.
 	 * So check if we became owner, if not, take us off the wait_list.
 	 */
 	if (rt_mutex_owner(lock) != current) {
 		remove_waiter(lock, waiter);
-		fixup_rt_mutex_waiters(lock);
 		cleanup = true;
 	}
-
 	/*
 	 * try_to_take_rt_mutex() sets the waiter bit unconditionally. We might
 	 * have to fix that up.

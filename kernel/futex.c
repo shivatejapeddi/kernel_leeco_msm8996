@@ -970,7 +970,8 @@ static int attach_to_pi_state(u32 __user *uaddr, u32 uval,
 			      struct futex_pi_state **ps)
 {
 	pid_t pid = uval & FUTEX_TID_MASK;
-	int ret, uval2;
+	u32 uval2;
+	int ret;
 
 	/*
 	 * Userspace might have messed up non-PI and PI futexes [3]
@@ -1340,7 +1341,7 @@ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_pi_state *pi_
 {
 	u32 uninitialized_var(curval), newval;
 	struct task_struct *new_owner;
-	bool deboost = false;
+	bool postunlock = false;
 	WAKE_Q(wake_q);
 	int ret = 0;
 
@@ -1384,6 +1385,11 @@ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_pi_state *pi_
 	if (ret)
 		goto out_unlock;
 
+	/*
+	 * This is a point of no return; once we modify the uval there is no
+	 * going back and subsequent operations must not fail.
+	 */
+
 	raw_spin_lock(&pi_state->owner->pi_lock);
 	WARN_ON(list_empty(&pi_state->list));
 	list_del_init(&pi_state->list);
@@ -1395,18 +1401,13 @@ static int wake_futex_pi(u32 __user *uaddr, u32 uval, struct futex_pi_state *pi_
 	pi_state->owner = new_owner;
 	raw_spin_unlock(&new_owner->pi_lock);
 
-	/*
-	 * We've updated the uservalue, this unlock cannot fail.
-	 */
-	deboost = __rt_mutex_futex_unlock(&pi_state->pi_mutex, &wake_q);
+	postunlock = __rt_mutex_futex_unlock(&pi_state->pi_mutex, &wake_q);
 
 out_unlock:
 	raw_spin_unlock_irq(&pi_state->pi_mutex.wait_lock);
 
-	if (deboost) {
-		wake_up_q(&wake_q);
-		rt_mutex_adjust_prio(current);
-	}
+	if (postunlock)
+		rt_mutex_postunlock(&wake_q);
 
 	return ret;
 }
