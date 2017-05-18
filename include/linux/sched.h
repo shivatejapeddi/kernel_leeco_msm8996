@@ -1365,6 +1365,8 @@ struct sched_rt_entity {
 	unsigned int time_slice;
 	unsigned short on_rq;
 	unsigned short on_list;
+	bool schedtune_enqueued;
+	struct hrtimer schedtune_timer;
 
 	struct sched_rt_entity *back;
 #ifdef CONFIG_RT_GROUP_SCHED
@@ -1387,7 +1389,8 @@ struct sched_dl_entity {
 	u64 dl_runtime;		/* maximum runtime for each instance	*/
 	u64 dl_deadline;	/* relative deadline of each instance	*/
 	u64 dl_period;		/* separation of two instances (period) */
-	u64 dl_bw;		/* dl_runtime / dl_deadline		*/
+	u64 dl_bw;		/* dl_runtime / dl_period		*/
+	u64 dl_density;		/* dl_runtime / dl_deadline		*/
 
 	/*
 	 * Actual scheduling parameters. Initialized with the values above,
@@ -1405,24 +1408,36 @@ struct sched_dl_entity {
 	 * task has to wait for a replenishment to be performed at the
 	 * next firing of dl_timer.
 	 *
-	 * @dl_new tells if a new instance arrived. If so we must
-	 * start executing it with full runtime and reset its absolute
-	 * deadline;
-	 *
 	 * @dl_boosted tells if we are boosted due to DI. If so we are
 	 * outside bandwidth enforcement mechanism (but only until we
 	 * exit the critical section);
 	 *
 	 * @dl_yielded tells if task gave up the cpu before consuming
 	 * all its available runtime during the last job.
+	 *
+	 * @dl_overrun tells if the task asked to be informed about runtime
+	 * overruns.
 	 */
-	int dl_throttled, dl_new, dl_boosted, dl_yielded;
+	unsigned int				dl_throttled      : 1;
+	unsigned int				dl_boosted        : 1;
+	unsigned int				dl_yielded        : 1;
+	unsigned int				dl_non_contending : 1;
+	unsigned int				dl_overrun	  : 1;
 
 	/*
 	 * Bandwidth enforcement timer. Each -deadline task has its
 	 * own bandwidth to be enforced, thus we need one timer per task.
 	 */
 	struct hrtimer dl_timer;
+
+	/*
+	 * Inactive timer, responsible for decreasing the active utilization
+	 * at the "0-lag time". When a -deadline task blocks, it contributes
+	 * to GRUB's active utilization until the "0-lag time", hence a
+	 * timer is needed to decrease the active utilization at the correct
+	 * time.
+	 */
+	struct hrtimer inactive_timer;
 };
 
 union rcu_special {
@@ -1558,6 +1573,7 @@ struct task_struct {
 	/* Revert to default priority/policy when forking */
 	unsigned sched_reset_on_fork:1;
 	unsigned sched_contributes_to_load:1;
+	unsigned sched_remote_wakeup:1;
 
 	unsigned long atomic_flags; /* Flags needing atomic access. */
 
@@ -2316,6 +2332,10 @@ static inline void tsk_restore_flags(struct task_struct *task,
 	task->flags |= orig_flags & flags;
 }
 
+extern int cpuset_cpumask_can_shrink(const struct cpumask *cur,
+				     const struct cpumask *trial);
+extern int task_can_attach(struct task_struct *p,
+			   const struct cpumask *cs_cpus_allowed);
 #ifdef CONFIG_SMP
 extern void do_set_cpus_allowed(struct task_struct *p,
 			       const struct cpumask *new_mask);
@@ -2484,6 +2504,8 @@ extern int sched_setscheduler(struct task_struct *, int,
 extern int sched_setscheduler_nocheck(struct task_struct *, int,
 				      const struct sched_param *);
 extern int sched_setattr(struct task_struct *,
+			 const struct sched_attr *);
+extern int sched_setattr_nocheck(struct task_struct *,
 			 const struct sched_attr *);
 extern struct task_struct *idle_task(int cpu);
 /**
@@ -3350,9 +3372,9 @@ struct cpu_cycle_counter_cb {
 };
 int register_cpu_cycle_counter_cb(struct cpu_cycle_counter_cb *cb);
 
-#define SCHED_CPUFREQ_RT        (1U << 0)
-#define SCHED_CPUFREQ_DL        (1U << 1)
-#define SCHED_CPUFREQ_IOWAIT    (1U << 2)
+#define SCHED_CPUFREQ_RT	(1U << 0)
+#define SCHED_CPUFREQ_DL	(1U << 1)
+#define SCHED_CPUFREQ_IOWAIT	(1U << 2)
 
 #ifdef CONFIG_CPU_FREQ
 struct update_util_data {

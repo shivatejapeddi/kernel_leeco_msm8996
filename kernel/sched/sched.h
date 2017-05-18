@@ -111,13 +111,39 @@ static inline int task_has_dl_policy(struct task_struct *p)
 	return dl_policy(p->policy);
 }
 
+#define cap_scale(v, s) ((v)*(s) >> SCHED_CAPACITY_SHIFT)
+
+/*
+ * !! For sched_setattr_nocheck() (kernel) only !!
+ *
+ * This is actually gross. :(
+ *
+ * It is used to make schedutil kworker(s) higher priority than SCHED_DEADLINE
+ * tasks, but still be able to sleep. We need this on platforms that cannot
+ * atomically change clock frequency. Remove once fast switching will be
+ * available on such platforms.
+ *
+ * SUGOV stands for SchedUtil GOVernor.
+ */
+#define SCHED_FLAG_SUGOV	0x10000000
+
+static inline bool dl_entity_is_special(struct sched_dl_entity *dl_se)
+{
+#ifdef CONFIG_CPU_FREQ_GOV_SCHEDUTIL
+	return unlikely(dl_se->flags & SCHED_FLAG_SUGOV);
+#else
+	return false;
+#endif
+}
+
 /*
  * Tells if entity @a should preempt entity @b.
  */
 static inline bool
 dl_entity_preempt(struct sched_dl_entity *a, struct sched_dl_entity *b)
 {
-	return dl_time_before(a->deadline, b->deadline);
+	return dl_entity_is_special(a) ||
+	       dl_time_before(a->deadline, b->deadline);
 }
 
 /*
@@ -175,12 +201,37 @@ static inline int dl_bandwidth_enabled(void)
 }
 
 extern struct dl_bw *dl_bw_of(int i);
+extern int dl_bw_cpus(int i);
 
 struct dl_bw {
 	raw_spinlock_t lock;
 	u64 bw, total_bw;
 };
 
+static inline void __dl_update(struct dl_bw *dl_b, s64 bw);
+
+static inline
+void __dl_clear(struct dl_bw *dl_b, u64 tsk_bw, int cpus)
+{
+	dl_b->total_bw -= tsk_bw;
+	__dl_update(dl_b, (s32)tsk_bw / cpus);
+}
+
+static inline
+void __dl_add(struct dl_bw *dl_b, u64 tsk_bw, int cpus)
+{
+	dl_b->total_bw += tsk_bw;
+	__dl_update(dl_b, -((s32)tsk_bw / cpus));
+}
+
+static inline
+bool __dl_overflow(struct dl_bw *dl_b, int cpus, u64 old_bw, u64 new_bw)
+{
+	return dl_b->bw != -1 &&
+	       dl_b->bw * cpus < dl_b->total_bw - old_bw + new_bw;
+}
+
+void dl_change_utilization(struct task_struct *p, u64 new_bw);
 extern struct mutex sched_domains_mutex;
 
 #ifdef CONFIG_CGROUP_SCHED
@@ -462,8 +513,7 @@ struct rt_rq {
 /* Deadline class' related fields in a runqueue */
 struct dl_rq {
 	/* runqueue is an rbtree, ordered by deadline */
-	struct rb_root rb_root;
-	struct rb_node *rb_leftmost;
+	struct rb_root_cached root;
 
 	unsigned long dl_nr_running;
 
@@ -487,13 +537,34 @@ struct dl_rq {
 	 * an rb-tree, ordered by tasks' deadlines, with caching
 	 * of the leftmost (earliest deadline) element.
 	 */
-	struct rb_root pushable_dl_tasks_root;
-	struct rb_node *pushable_dl_tasks_leftmost;
+	struct rb_root_cached pushable_dl_tasks_root;
 #else
 	struct dl_bw dl_bw;
 #endif
-	/* This is the "average utilization" for this runqueue */
-	s64 avg_bw;
+	/*
+	 * "Active utilization" for this runqueue: increased when a
+	 * task wakes up (becomes TASK_RUNNING) and decreased when a
+	 * task blocks
+	 */
+	u64 running_bw;
+
+	/*
+	 * Utilization of the tasks "assigned" to this runqueue (including
+	 * the tasks that are in runqueue and the tasks that executed on this
+	 * CPU and blocked). Increased when a task moves to this runqueue, and
+	 * decreased when the task moves away (migrates, changes scheduling
+	 * policy, or terminates).
+	 * This is needed to compute the "inactive utilization" for the
+	 * runqueue (inactive utilization = this_bw - running_bw).
+	 */
+	u64 this_bw;
+	u64 extra_bw;
+
+	/*
+	 * Inverse of the fraction of CPU utilization that can be reclaimed
+	 * by the GRUB algorithm.
+	 */
+	u64 bw_ratio;
 };
 
 #ifdef CONFIG_SMP
@@ -599,8 +670,6 @@ struct rq {
 #ifdef CONFIG_NO_HZ_FULL
 	unsigned long last_sched_tick;
 #endif
-	int skip_clock_update;
-
 	/* capture load from *all* tasks on this cpu: */
 	struct load_weight load;
 	unsigned long nr_load_updates;
@@ -628,6 +697,7 @@ struct rq {
 	unsigned long next_balance;
 	struct mm_struct *prev_mm;
 
+	unsigned int clock_skip_update;
 	u64 clock;
 	u64 clock_task;
 
@@ -761,6 +831,18 @@ static inline u64 rq_clock_task(struct rq *rq)
 {
 	lockdep_assert_held(&rq->lock);
 	return rq->clock_task;
+}
+
+#define RQCF_REQ_SKIP	0x01
+#define RQCF_ACT_SKIP	0x02
+
+static inline void rq_clock_skip_update(struct rq *rq, bool skip)
+{
+	lockdep_assert_held(&rq->lock);
+	if (skip)
+		rq->clock_skip_update |= RQCF_REQ_SKIP;
+	else
+		rq->clock_skip_update &= ~RQCF_REQ_SKIP;
 }
 
 #ifdef CONFIG_NUMA_BALANCING
@@ -1199,29 +1281,27 @@ static const u32 prio_to_wmult[40] = {
  *
  * ENQUEUE_HEAD      - place at front of runqueue (tail if not specified)
  * ENQUEUE_REPLENISH - CBS (replenish runtime and postpone deadline)
- * ENQUEUE_WAKING    - sched_class::task_waking was called
+ * ENQUEUE_MIGRATED  - the task was migrated during wakeup
  *
  */
 
+#define DEQUEUE_SLEEP		0x01
 #define DEQUEUE_SAVE		0x02 /* matches ENQUEUE_RESTORE */
 #define DEQUEUE_MOVE		0x04 /* matches ENQUEUE_MOVE */
-#define DEQUEUE_MIGRATING	0x08
 
 #define ENQUEUE_WAKEUP		0x01
+#define ENQUEUE_RESTORE		0x02
 #define ENQUEUE_MOVE		0x04
 
 #define ENQUEUE_HEAD		0x08
+#define ENQUEUE_REPLENISH	0x10
 #ifdef CONFIG_SMP
-#define ENQUEUE_WAKING		0x20
+#define ENQUEUE_MIGRATED	0x20
+#define ENQUEUE_WAKEUP_NEW	0x40
 #else
-#define ENQUEUE_WAKING		0x00
-#endif
-
-#define ENQUEUE_REPLENISH	0x08
-#define ENQUEUE_RESTORE		0x10
+#define ENQUEUE_MIGRATED	0x00
 #define ENQUEUE_WAKEUP_NEW	0x20
-
-#define DEQUEUE_SLEEP		1
+#endif
 
 #define RETRY_TASK		((void *)-1UL)
 
@@ -1244,7 +1324,8 @@ struct sched_class {
 	 * tasks.
 	 */
 	struct task_struct * (*pick_next_task) (struct rq *rq,
-						struct task_struct *prev);
+						struct task_struct *prev,
+						struct pin_cookie cookie);
 	void (*put_prev_task) (struct rq *rq, struct task_struct *p);
 
 #ifdef CONFIG_SMP
@@ -1252,7 +1333,6 @@ struct sched_class {
 			       int subling_count_hint);
 	void (*migrate_task_rq)(struct task_struct *p, int next_cpu);
 
-	void (*task_waking) (struct task_struct *task);
 	void (*task_woken) (struct rq *this_rq, struct task_struct *task);
 
 	void (*set_cpus_allowed)(struct task_struct *p,
@@ -1376,7 +1456,6 @@ extern void update_max_interval(void);
 extern void init_sched_dl_class(void);
 extern void init_sched_rt_class(void);
 extern void init_sched_fair_class(void);
-extern void init_sched_dl_class(void);
 
 extern void resched_curr(struct rq *rq);
 extern void resched_cpu(int cpu);
@@ -1387,7 +1466,12 @@ extern void init_rt_bandwidth(struct rt_bandwidth *rt_b, u64 period, u64 runtime
 extern struct dl_bandwidth def_dl_bandwidth;
 extern void init_dl_bandwidth(struct dl_bandwidth *dl_b, u64 period, u64 runtime);
 extern void init_dl_task_timer(struct sched_dl_entity *dl_se);
+extern void init_dl_inactive_task_timer(struct sched_dl_entity *dl_se);
+extern void init_dl_rq_bw_ratio(struct dl_rq *dl_rq);
 
+#define BW_SHIFT	20
+#define BW_UNIT		(1 << BW_SHIFT)
+#define RATIO_SHIFT	8
 unsigned long to_ratio(u64 period, u64 runtime);
 
 extern void init_entity_runnable_average(struct sched_entity *se);
@@ -1680,8 +1764,38 @@ static inline void sched_rt_avg_update(struct rq *rq, u64 rt_delta) { }
 static inline void sched_avg_update(struct rq *rq) { }
 #endif
 
-extern struct rq *lock_rq_of(struct task_struct *p, unsigned long *flags);
-extern void unlock_rq_of(struct rq *rq, struct task_struct *p, unsigned long *flags);
+struct rq_flags {
+	unsigned long flags;
+	struct pin_cookie cookie;
+};
+
+struct rq *__task_rq_lock(struct task_struct *p, struct rq_flags *rf)
+	__acquires(rq->lock);
+struct rq *task_rq_lock(struct task_struct *p, struct rq_flags *rf)
+	__acquires(p->pi_lock)
+	__acquires(rq->lock);
+
+static inline void __task_rq_unlock(struct rq *rq, struct rq_flags *rf)
+	__releases(rq->lock)
+{
+	lockdep_unpin_lock(&rq->lock, rf->cookie);
+	raw_spin_unlock(&rq->lock);
+}
+
+static inline void
+task_rq_unlock(struct rq *rq, struct task_struct *p, struct rq_flags *rf)
+	__releases(rq->lock)
+	__releases(p->pi_lock)
+{
+	lockdep_unpin_lock(&rq->lock, rf->cookie);
+	raw_spin_unlock(&rq->lock);
+	raw_spin_unlock_irqrestore(&p->pi_lock, rf->flags);
+}
+
+extern struct rq *lock_rq_of(struct task_struct *p, struct rq_flags *rf);
+extern void unlock_rq_of(struct rq *rq,
+			 struct task_struct *p,
+			 struct rq_flags *rf);
 
 #ifdef CONFIG_SMP
 #ifdef CONFIG_PREEMPT
@@ -1868,10 +1982,11 @@ extern struct sched_entity *__pick_first_entity(struct cfs_rq *cfs_rq);
 extern struct sched_entity *__pick_last_entity(struct cfs_rq *cfs_rq);
 extern void print_cfs_stats(struct seq_file *m, int cpu);
 extern void print_rt_stats(struct seq_file *m, int cpu);
+extern void print_dl_stats(struct seq_file *m, int cpu);
 
 extern void init_cfs_rq(struct cfs_rq *cfs_rq);
-extern void init_rt_rq(struct rt_rq *rt_rq, struct rq *rq);
-extern void init_dl_rq(struct dl_rq *dl_rq, struct rq *rq);
+extern void init_rt_rq(struct rt_rq *rt_rq);
+extern void init_dl_rq(struct dl_rq *dl_rq);
 
 extern void cfs_bandwidth_usage_inc(void);
 extern void cfs_bandwidth_usage_dec(void);
@@ -1887,6 +2002,31 @@ enum rq_nohz_flag_bits {
 
 #define nohz_flags(cpu)	(&cpu_rq(cpu)->nohz_flags)
 #endif
+
+
+#ifdef CONFIG_SMP
+static inline
+void __dl_update(struct dl_bw *dl_b, s64 bw)
+{
+	struct root_domain *rd = container_of(dl_b, struct root_domain, dl_bw);
+	int i;
+
+	for_each_cpu_and(i, rd->span, cpu_active_mask) {
+		struct rq *rq = cpu_rq(i);
+
+		rq->dl.extra_bw += bw;
+	}
+}
+#else
+static inline
+void __dl_update(struct dl_bw *dl_b, s64 bw)
+{
+	struct dl_rq *dl = container_of(dl_b, struct dl_rq, dl_bw);
+
+	dl->extra_bw += bw;
+}
+#endif
+
 
 #ifdef CONFIG_IRQ_TIME_ACCOUNTING
 
@@ -1958,14 +2098,14 @@ DECLARE_PER_CPU(struct update_util_data *, cpufreq_update_util_data);
  * The way cpufreq is currently arranged requires it to evaluate the CPU
  * performance state (frequency/voltage) on a regular basis to prevent it from
  * being stuck in a completely inadequate performance level for too long.
- * That is not guaranteed to happen if the updates are only triggered from CFS,
- * though, because they may not be coming in if RT or deadline tasks are active
- * all the time (or there are RT and DL tasks only).
+ * That is not guaranteed to happen if the updates are only triggered from CFS
+ * and DL, though, because they may not be coming in if only RT tasks are
+ * active all the time (or there are RT tasks only).
  *
- * As a workaround for that issue, this function is called by the RT and DL
- * sched classes to trigger extra cpufreq updates to prevent it from stalling,
+ * As a workaround for that issue, this function is called periodically by the
+ * RT sched class to trigger extra cpufreq updates to prevent it from stalling,
  * but that really is a band-aid.  Going forward it should be replaced with
- * solutions targeted more specifically at RT and DL tasks.
+ * solutions targeted more specifically at RT tasks.
  */
 static inline void cpufreq_update_util(struct rq *rq, unsigned int flags)
 {
