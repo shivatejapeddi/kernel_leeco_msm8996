@@ -50,7 +50,16 @@ bool __read_mostly walt_disabled = false;
  */
 __read_mostly unsigned int walt_ravg_window =
 					    (20000000 / TICK_NSEC) * TICK_NSEC;
+
+#ifdef CONFIG_HZ_300
+/*
+ * Tick interval becomes to 3333333 due to
+ * rounding error when HZ=300.
+ */
+#define MIN_SCHED_RAVG_WINDOW (3333333 * 6)
+#else
 #define MIN_SCHED_RAVG_WINDOW ((10000000 / TICK_NSEC) * TICK_NSEC)
+#endif
 #define MAX_SCHED_RAVG_WINDOW ((1000000000 / TICK_NSEC) * TICK_NSEC)
 
 static unsigned int sync_cpu;
