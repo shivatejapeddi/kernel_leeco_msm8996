@@ -68,22 +68,13 @@ static unsigned int max_possible_capacity = 1024;
 /* Mask of all CPUs that have  max_possible_capacity */
 static cpumask_t mpc_mask = CPU_MASK_ALL;
 
-/* Window size (in ns) */
-__read_mostly unsigned int walt_ravg_window = 20000000;
-
-/* Min window size (in ns) = 10ms */
-#ifdef CONFIG_HZ_300
 /*
- * Tick interval becomes to 3333333 due to
- * rounding error when HZ=300.
+ * Window size (in ns). Adjust for the tick size so that the window
+ * rollover occurs just before the tick boundary.
  */
-#define MIN_SCHED_RAVG_WINDOW (3333333 * 6)
-#else
-#define MIN_SCHED_RAVG_WINDOW 10000000
-#endif
-
-/* Max window size (in ns) = 1s */
-#define MAX_SCHED_RAVG_WINDOW 1000000000
+__read_mostly unsigned int walt_ravg_window = 20000000 / TICK_NSEC * TICK_NSEC;
+#define MIN_SCHED_RAVG_WINDOW (10000000 / TICK_NSEC * TICK_NSEC)
+#define MAX_SCHED_RAVG_WINDOW (1000000000 / TICK_NSEC * TICK_NSEC)
 
 static unsigned int sync_cpu;
 static ktime_t ktime_last;
@@ -177,9 +168,12 @@ static int __init set_walt_ravg_window(char *str)
 {
     get_option(&str, &walt_ravg_window);
 
-    walt_disabled = (walt_ravg_window < MIN_SCHED_RAVG_WINDOW ||
-		walt_ravg_window > MAX_SCHED_RAVG_WINDOW);
-    return 0;
+	/* Adjust for CONFIG_HZ */
+	walt_ravg_window = walt_ravg_window / TICK_NSEC * TICK_NSEC;
+
+	walt_disabled = (walt_ravg_window < MIN_SCHED_RAVG_WINDOW ||
+				walt_ravg_window > MAX_SCHED_RAVG_WINDOW);
+	return 0;
 }
 
 early_param("walt_ravg_window", set_walt_ravg_window);
