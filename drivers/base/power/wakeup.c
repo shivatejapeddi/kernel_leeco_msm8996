@@ -16,7 +16,6 @@
 #include <linux/debugfs.h>
 #include <linux/types.h>
 #include <trace/events/power.h>
-
 #include "power.h"
 
 
@@ -24,12 +23,11 @@
 #include "boeffla_wl_blocker.h"
 
 char list_wl_search[LENGTH_LIST_WL_SEARCH] = {0};
-bool wl_blocker_active = false;
+bool wl_blocker_active = true;
 bool wl_blocker_debug = false;
 
 static void wakeup_source_deactivate(struct wakeup_source *ws);
 #endif
-
 
 /*
  * If set, the suspend/hibernate code will abort transitions to a sleep state
