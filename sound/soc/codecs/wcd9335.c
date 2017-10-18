@@ -5159,8 +5159,9 @@ static int tasha_codec_enable_swr(struct snd_soc_dapm_widget *w,
 {
 	struct snd_soc_codec *codec = w->codec;
 	struct tasha_priv *tasha;
-	int i, ch_cnt;
-
+#ifdef WSA881X_PA
+  	int i, ch_cnt;
+#endif
 	tasha = snd_soc_codec_get_drvdata(codec);
 
 	if (!tasha->nr)
@@ -5174,6 +5175,7 @@ static int tasha_codec_enable_swr(struct snd_soc_dapm_widget *w,
 		if ((strnstr(w->name, "INT8_", sizeof("RX INT8_"))) &&
 		    !tasha->rx_8_count)
 			tasha->rx_8_count++;
+#ifdef WSA881X_PA
 		ch_cnt = tasha->rx_7_count + tasha->rx_8_count;
 
 		for (i = 0; i < tasha->nr; i++) {
@@ -5182,6 +5184,7 @@ static int tasha_codec_enable_swr(struct snd_soc_dapm_widget *w,
 			swrm_wcd_notify(tasha->swr_ctrl_data[i].swr_pdev,
 					SWR_SET_NUM_RX_CH, &ch_cnt);
 		}
+#endif
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		if ((strnstr(w->name, "INT7_", sizeof("RX INT7_"))) &&
@@ -5190,6 +5193,7 @@ static int tasha_codec_enable_swr(struct snd_soc_dapm_widget *w,
 		if ((strnstr(w->name, "INT8_", sizeof("RX INT8_"))) &&
 		    tasha->rx_8_count)
 			tasha->rx_8_count--;
+#ifdef WSA881X_PA
 		ch_cnt = tasha->rx_7_count + tasha->rx_8_count;
 
 		for (i = 0; i < tasha->nr; i++)
@@ -5197,6 +5201,7 @@ static int tasha_codec_enable_swr(struct snd_soc_dapm_widget *w,
 					SWR_SET_NUM_RX_CH, &ch_cnt);
 
 		break;
+#endif
 	}
 	dev_dbg(tasha->dev, "%s: current swr ch cnt: %d\n",
 		__func__, tasha->rx_7_count + tasha->rx_8_count);
@@ -5990,6 +5995,8 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 					    CF_MIN_3DB_150HZ << 5);
 		/* Enable TX PGA Mute */
 		snd_soc_update_bits(codec, tx_vol_ctl_reg, 0x10, 0x10);
+		/* Enable APC */
+		snd_soc_update_bits(codec, dec_cfg_reg, 0x08, 0x08);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		snd_soc_update_bits(codec, hpf_gate_reg, 0x01, 0x00);
@@ -6019,6 +6026,7 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 		hpf_cut_off_freq =
 			tasha->tx_hpf_work[decimator].hpf_cut_off_freq;
 		snd_soc_update_bits(codec, tx_vol_ctl_reg, 0x10, 0x10);
+		snd_soc_update_bits(codec, dec_cfg_reg, 0x08, 0x00);
 		if (cancel_delayed_work_sync(
 		    &tasha->tx_hpf_work[decimator].dwork)) {
 			if (hpf_cut_off_freq != CF_MIN_3DB_150HZ) {
@@ -13700,14 +13708,17 @@ static int tasha_device_down(struct wcd9xxx *wcd9xxx)
 	struct snd_soc_codec *codec;
 	struct tasha_priv *priv;
 	int count;
-	int i = 0;
-
+#ifdef WSA881X_PA
+  	int i = 0;
+#endif
 	codec = (struct snd_soc_codec *)(wcd9xxx->ssr_priv);
 	priv = snd_soc_codec_get_drvdata(codec);
 	wcd_cpe_ssr_event(priv->cpe_core, WCD_CPE_BUS_DOWN_EVENT);
+#ifdef WSA881X_PA
 	for (i = 0; i < priv->nr; i++)
 		swrm_wcd_notify(priv->swr_ctrl_data[i].swr_pdev,
 				SWR_DEVICE_DOWN, NULL);
+#endif
 	snd_soc_card_change_online_state(codec->component.card, 0);
 	for (count = 0; count < NUM_CODEC_DAIS; count++)
 		priv->dai[count].bus_down_in_recovery = true;
