@@ -5319,7 +5319,7 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 	}
 
 	if (of_property_read_bool(dev->of_node, "letv,smartpa-audio")) {
-		pr_info( "%s(): smartpa audio support present\n",
+		pr_info( "%s(): efing smartpa audio support present\n",
 				__func__);
 		memcpy(dailink + len_4, msm8996_smartpa_dai_link,
 			sizeof(msm8996_smartpa_dai_link));
