@@ -190,6 +190,12 @@ static int32_t msm_flash_i2c_write_table(
 	conf_array.reg_setting = settings->reg_setting_a;
 	conf_array.size = settings->size;
 
+	/* Validate the settings size */
+	if((!conf_array.size) || (conf_array.size > MAX_I2C_REG_SET)) {
+		pr_err("failed: invalid size %d", conf_array.size);
+		return -EINVAL;
+	}
+
 	return flash_ctrl->flash_i2c_client.i2c_func_tbl->i2c_write_table(
 		&flash_ctrl->flash_i2c_client, &conf_array);
 }
@@ -1367,11 +1373,11 @@ static ssize_t irled2_store(struct device *dev,
 	return size;
 }
 
-static DEVICE_ATTR(flashled1, 0644, NULL, flashled1_store);
-static DEVICE_ATTR(flashled2, 0644, NULL, flashled2_store);
-static DEVICE_ATTR(flashled_chipid, 0444, flashled_chipid_show, NULL);
-static DEVICE_ATTR(irled1, 0644, NULL, irled1_store);
-static DEVICE_ATTR(irled2, 0644, NULL, irled2_store);
+static DEVICE_ATTR(flashled1, S_IWUSR | S_IWGRP | S_IWOTH, NULL, flashled1_store);
+static DEVICE_ATTR(flashled2, S_IWUSR | S_IWGRP | S_IWOTH, NULL, flashled2_store);
+static DEVICE_ATTR(flashled_chipid, S_IRUSR | S_IRGRP | S_IROTH, flashled_chipid_show, NULL);
+static DEVICE_ATTR(irled1, S_IWUSR | S_IWGRP | S_IWOTH, NULL, irled1_store);
+static DEVICE_ATTR(irled2, S_IWUSR | S_IWGRP | S_IWOTH, NULL, irled2_store);
 
 static int32_t msm_flash_get_dt_data(struct device_node *of_node,
 	struct msm_flash_ctrl_t *fctrl)
