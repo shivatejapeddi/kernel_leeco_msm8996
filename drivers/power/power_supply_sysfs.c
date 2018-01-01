@@ -46,7 +46,7 @@ static ssize_t power_supply_show_property(struct device *dev,
 	static const char * const type_text[] = {
 		"Unknown", "Battery", "UPS", "Mains", "USB",
 		"USB_DCP", "USB_CDP", "USB_ACA",
-		"USB_HVDCP", "USB_HVDCP_3", "USB_FLOAT", "USB_PD", "USB_LE_PD", "Wireless", "BMS",
+		"USB_HVDCP", "USB_HVDCP_3", "USB_PD", "USB_LE_PD", "Wireless", "BMS",
 		"USB_Parallel", "Wipower", "TYPEC", "TYPEC_UFP", "TYPEC_DFP"
 	};
 	static char *status_text[] = {
