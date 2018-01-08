@@ -138,6 +138,12 @@ int cpudl_find(struct cpudl *cp, struct task_struct *p,
 		int best_cpu = cpudl_maximum_cpu(cp);
 		WARN_ON(best_cpu != -1 && !cpu_present(best_cpu));
 
+		/*
+		 * The heap tree is empty for now, just return.
+		 */
+		if (best_cpu == -1)
+			return 0;
+
 		if (cpumask_test_cpu(best_cpu, &p->cpus_allowed) &&
 		    dl_time_before(dl_se->deadline, cpudl_maximum_dl(cp))) {
 			if (later_mask)
@@ -266,8 +272,10 @@ int cpudl_init(struct cpudl *cp)
 		return -ENOMEM;
 	}
 
-	for_each_possible_cpu(i)
+	for_each_possible_cpu(i) {
+		cp->elements[i].cpu = -1;
 		cp->elements[i].idx = IDX_INVALID;
+	}
 
 	return 0;
 }
