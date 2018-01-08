@@ -108,9 +108,14 @@ static void cpudl_heapify(struct cpudl *cp, int idx)
 		cpudl_heapify_down(cp, idx);
 }
 
-static inline int cpudl_maximum(struct cpudl *cp)
+static inline int cpudl_maximum_cpu(struct cpudl *cp)
 {
 	return cp->elements[0].cpu;
+}
+
+static inline u64 cpudl_maximum_dl(struct cpudl *cp)
+{
+	return cp->elements[0].dl;
 }
 
 /*
@@ -130,11 +135,11 @@ int cpudl_find(struct cpudl *cp, struct task_struct *p,
 	    cpumask_and(later_mask, cp->free_cpus, &p->cpus_allowed)) {
 		return 1;
 	} else {
-		int best_cpu = cpudl_maximum(cp);
+		int best_cpu = cpudl_maximum_cpu(cp);
 		WARN_ON(best_cpu != -1 && !cpu_present(best_cpu));
 
 		if (cpumask_test_cpu(best_cpu, &p->cpus_allowed) &&
-		    dl_time_before(dl_se->deadline, cp->elements[0].dl)) {
+		    dl_time_before(dl_se->deadline, cpudl_maximum_dl(cp))) {
 			if (later_mask)
 				cpumask_set_cpu(best_cpu, later_mask);
 
