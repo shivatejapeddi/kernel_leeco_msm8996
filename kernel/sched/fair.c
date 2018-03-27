@@ -2388,14 +2388,6 @@ unsigned int __read_mostly sched_spill_load;
 unsigned int __read_mostly sysctl_sched_spill_load_pct = 100;
 
 /*
- * frequency aggregation threshold
- */
-#ifdef CONFIG_SCHED_FREQ_INPUT
-unsigned int __read_mostly sysctl_sched_freq_aggregate_threshold_pct = 0;
-unsigned int __read_mostly sched_freq_aggregate_threshold = 0;
-#endif
-
-/*
  * Tasks whose bandwidth consumption on a cpu is more than
  * sched_upmigrate are considered "big" tasks. Big tasks will be
  * considered for "up" migration, i.e migrating to a cpu with better
@@ -2487,9 +2479,6 @@ void set_hmp_defaults(void)
 #ifdef CONFIG_SCHED_FREQ_INPUT
 	sched_major_task_runtime =
 		mult_frac(sched_ravg_window, MAJOR_TASK_PCT, 100);
-
-	sched_freq_aggregate_threshold =
-		pct_to_real(sysctl_sched_freq_aggregate_threshold_pct);
 #endif
 
 	sched_init_task_load_pelt =
@@ -3709,36 +3698,8 @@ static inline int invalid_value_freq_input(unsigned int *data)
 
 	return 0;
 }
-
-static inline int
-handle_freq_aggregate_threshold(unsigned int *data, unsigned int old_val)
-{
-	/*
-	 * Special handling for sched_freq_aggregate_threshold_pct
-	 * which can be greater than 100. Use 1000 as an upper bound
-	 * value which works for all practical use cases.
-	 *
-	 */
-	if (data == &sysctl_sched_freq_aggregate_threshold_pct) {
-		if (*data > 1000) {
-			*data = old_val;
-			return -EINVAL;
-		}
-		sched_freq_aggregate_threshold =
-			pct_to_real(sysctl_sched_freq_aggregate_threshold_pct);
-		return 1;
-	}
-
-	return 0;
-}
 #else
 static inline int invalid_value_freq_input(unsigned int *data)
-{
-	return 0;
-}
-
-static inline int
-handle_freq_aggregate_threshold(unsigned int *data, unsigned int old_val)
 {
 	return 0;
 }
@@ -3805,21 +3766,7 @@ int sched_hmp_proc_update_handler(struct ctl_table *table, int write,
 	int ret;
 	unsigned int old_val;
 	unsigned int *data = (unsigned int *)table->data;
-	int update_task_count = 0;
-
-	if (!sched_enable_hmp)
-		return 0;
-
-	/*
-	 * The policy mutex is acquired with cpu_hotplug.lock
-	 * held from cpu_up()->cpufreq_governor_interactive()->
-	 * sched_set_window(). So enforce the same order here.
-	 */
-	if (write && (data == &sysctl_sched_upmigrate_pct ||
-	    data == (unsigned int *)&sysctl_sched_upmigrate_min_nice)) {
-		update_task_count = 1;
-		get_online_cpus();
-	}
+	int update_min_nice = 0;
 
 	mutex_lock(&policy_mutex);
 
@@ -3827,21 +3774,19 @@ int sched_hmp_proc_update_handler(struct ctl_table *table, int write,
 
 	ret = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
 
-	if (ret || !write)
+	if (ret || !write || !sched_enable_hmp)
 		goto done;
 
 	if (write && (old_val == *data))
 		goto done;
 
-	if (handle_freq_aggregate_threshold(data, old_val)) {
-		goto done;
-	}
 	if (data == (unsigned int *)&sysctl_sched_upmigrate_min_nice) {
 		if ((*(int *)data) < -20 || (*(int *)data) > 19) {
 			*data = old_val;
 			ret = -EINVAL;
 			goto done;
 		}
+		update_min_nice = 1;
 	} else if (data != &sysctl_sched_select_prev_cpu_us) {
 		/*
 		 * all tunables other than min_nice and prev_cpu_us are
@@ -3863,17 +3808,19 @@ int sched_hmp_proc_update_handler(struct ctl_table *table, int write,
 	 * includes taking runqueue lock of all online cpus and re-initiatizing
 	 * their big counter values based on changed criteria.
 	 */
-	if (update_task_count)
+	if ((data == &sysctl_sched_upmigrate_pct || update_min_nice)) {
+		get_online_cpus();
 		pre_big_task_count_change(cpu_online_mask);
+	}
 
 	set_hmp_defaults();
 
-	if (update_task_count)
+	if ((data == &sysctl_sched_upmigrate_pct || update_min_nice)) {
 		post_big_task_count_change(cpu_online_mask);
+		put_online_cpus();
+	}
 
 done:
-	if (update_task_count)
-		put_online_cpus();
 	mutex_unlock(&policy_mutex);
 	return ret;
 }
