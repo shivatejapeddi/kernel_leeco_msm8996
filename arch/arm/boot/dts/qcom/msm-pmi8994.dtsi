@@ -316,6 +316,29 @@
 			compatible = "qcom,qpnp-fg";
 			#address-cells = <1>;
 			#size-cells = <1>;
+
+            qcom,resume-soc-raw = <245>;
+			status = "okay";
+			qcom,bcl-lm-threshold-ma = <127>;
+			qcom,bcl-mh-threshold-ma = <405>;
+			qcom,fg-iterm-ma = <320>;
+			qcom,fg-chg-iterm-ma = <100>;
+            qcom,fg-delta-soc = <1>;
+			qcom,cycle-counter-en;
+			qcom,capacity-learning-on;
+			qcom,capacity-learning-feedback;
+            qcom,cl-max-start-soc = <30>;
+            qcom,fg-soc-max = <100>;
+            qcom,fg-soc-min = <0>;
+            qcom,fg-vbatt-low-threshold = <3150>;
+            qcom,fg-cutoff-voltage-mv = <3100>;
+			qcom,fg-cc-cv-threshold-mv = <4390>;
+			qcom,pmic-revid = <&pmi8994_revid>;
+			qcom,ext-sense-type;
+			qcom,cold-bat-decidegc = <0x0>;
+			qcom,cool-bat-decidegc = <0x96>;
+			qcom,hot-bat-decidegc = <0x1f4>;
+/*
 			qcom,resume-soc = <95>;
 			status = "okay";
 			qcom,bcl-lm-threshold-ma = <127>;
@@ -327,7 +350,7 @@
 			qcom,fg-cc-cv-threshold-mv = <4340>;
 			qcom,pmic-revid = <&pmi8994_revid>;
 			qcom,capacity-learning-feedback;
-
+*/
 			qcom,fg-soc@4000 {
 				status = "okay";
 				reg = <0x4000 0x100>;
