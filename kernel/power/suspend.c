@@ -497,9 +497,9 @@ static int enter_state(suspend_state_t state)
 		freeze_begin();
 
 	trace_suspend_resume(TPS("sync_filesystems"), 0, true);
-	printk(KERN_INFO "PM: Syncing filesystems ... ");
+	//printk(KERN_INFO "PM: Syncing filesystems ... ");
 	sys_sync();
-	printk("done.\n");
+	//printk("done.\n");
 	trace_suspend_resume(TPS("sync_filesystems"), 0, false);
 
 	pr_debug("PM: Preparing system for %s sleep\n", pm_states[state]);
@@ -524,6 +524,29 @@ static int enter_state(suspend_state_t state)
 	return error;
 }
 
+static struct timespec ts_start;
+static struct timespec ts_end;
+
+static void pm_suspend_stats(bool start)
+{
+
+	long sec_int, nsec_int, elapsed;
+
+	if( start ) {
+		getnstimeofday(&ts_start);
+		return;
+	}
+
+	getnstimeofday(&ts_end);
+
+	sec_int = (long)ts_end.tv_sec - (long)ts_start.tv_sec;
+	nsec_int = (long)ts_end.tv_nsec - (long)ts_start.tv_nsec;
+
+	elapsed = (sec_int*1000) + (nsec_int/1000000);
+
+	pr_info("PM: suspend elapsed %ld msec\n",elapsed);
+}
+
 static void pm_suspend_marker(char *annotation)
 {
 	struct timespec ts;
@@ -531,7 +554,7 @@ static void pm_suspend_marker(char *annotation)
 
 	getnstimeofday(&ts);
 	time_to_tm(ts.tv_sec, 0, &tm);
-	pr_info("PM: suspend %s %ld-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+	pr_debug("PM: suspend %s %ld-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
 		annotation, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 		tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
 }
@@ -551,6 +574,7 @@ int pm_suspend(suspend_state_t state)
 		return -EINVAL;
 
 	pm_suspend_marker("entry");
+	pm_suspend_stats(true);
 	error = enter_state(state);
 	if (error) {
 		suspend_stats.fail++;
@@ -558,6 +582,7 @@ int pm_suspend(suspend_state_t state)
 	} else {
 		suspend_stats.success++;
 	}
+	pm_suspend_stats(false);
 	pm_suspend_marker("exit");
 	return error;
 }
