@@ -286,6 +286,13 @@ static struct device_attribute power_supply_attrs[] = {
 	POWER_SUPPLY_ATTR(enable_jeita_detection),
 	POWER_SUPPLY_ATTR(battery_info),
 	POWER_SUPPLY_ATTR(battery_info_id),
+#ifdef CONFIG_PRODUCT_LE_X2
+	POWER_SUPPLY_ATTR(le_usbin_temp),
+	POWER_SUPPLY_ATTR(le_vph_voltage),
+	POWER_SUPPLY_ATTR(le_usb_temp_level),
+	POWER_SUPPLY_ATTR(le_black_call_mode),
+    POWER_SUPPLY_ATTR(le_quick_charge_mode),
+#endif
 	POWER_SUPPLY_ATTR(typec_cc_orientation),
 	POWER_SUPPLY_ATTR(typec_power_role),
 	POWER_SUPPLY_ATTR(pd_allowed),

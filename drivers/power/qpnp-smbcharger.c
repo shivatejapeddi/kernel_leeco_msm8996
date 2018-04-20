@@ -499,26 +499,26 @@ module_param_named(
 	int, S_IRUSR | S_IWUSR
 );
 
-static int smbchg_default_hvdcp_icl_ma = 1800;
+static int smbchg_default_hvdcp_icl_ma = 2800;
 module_param_named(
 	default_hvdcp_icl_ma, smbchg_default_hvdcp_icl_ma,
 	int, S_IRUSR | S_IWUSR
 );
 
-static int smbchg_default_hvdcp3_icl_ma = 3000;
+static int smbchg_default_hvdcp3_icl_ma = 3200;
 module_param_named(
 	default_hvdcp3_icl_ma, smbchg_default_hvdcp3_icl_ma,
 	int, S_IRUSR | S_IWUSR
 );
 
-static int smbchg_default_dcp_icl_ma = 1800;
+static int smbchg_default_dcp_icl_ma = 1500;
 module_param_named(
 	default_dcp_icl_ma, smbchg_default_dcp_icl_ma,
 	int, S_IRUSR | S_IWUSR
 );
 
 #ifdef CONFIG_PRODUCT_LE_X2
-static int smbchg_default_le_pd_icl_ma = 3000;
+static int smbchg_default_le_pd_icl_ma = 3200;
 module_param_named(
 	default_le_pd_icl_ma, smbchg_default_le_pd_icl_ma,
 	int, S_IRUSR | S_IWUSR
@@ -3525,7 +3525,7 @@ static int smbchg_black_call_icl_set(struct smbchg_chip *chip,
 /*
  *add by letv for control input current when quick charge mode
 */
-#define QUICK_CHARGE_MODE_CURRENT 1500
+#define QUICK_CHARGE_MODE_CURRENT 1000
 static int smbchg_quick_charge_icl_set(struct smbchg_chip *chip,
 				int quick_charge_val)
 {
@@ -5429,6 +5429,12 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 	else
 		current_limit_ma = smbchg_default_dcp_icl_ma;
 
+    if( chip->prev_quick_charge_mode ) {
+        if( current_limit_ma > QUICK_CHARGE_MODE_CURRENT ) {
+            current_limit_ma = QUICK_CHARGE_MODE_CURRENT;
+        }
+    }
+
 	pr_smb(PR_STATUS, "Type %d: setting mA = %d\n",
 		type, current_limit_ma);
 	rc = vote(chip->usb_icl_votable, PSY_ICL_VOTER, true,
@@ -5443,6 +5449,7 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 		chip->usb_psy->set_property(chip->usb_psy,
 				POWER_SUPPLY_PROP_REAL_TYPE,
 				&propval);
+        power_supply_set_current_limit(chip->usb_psy, current_limit_ma*1000);
 	}
 
 	/*
@@ -6850,13 +6857,33 @@ static void smbchg_external_power_changed(struct power_supply *psy)
 	rc = chip->usb_psy->get_property(chip->usb_psy,
 				POWER_SUPPLY_PROP_REAL_TYPE, &prop);
 
+    if ((rc == 0) && (prop.intval == POWER_SUPPLY_TYPE_USB_FLOAT)) {
+		if (float_charger_flag == 0 &&
+			/*strncmp(g_boot_mode, "charger", 7) &&*/
+			!IS_ERR_OR_NULL(pd_smbchg_chip)) {
+			float_charger_flag = 1;
+			schedule_delayed_work(
+				&pd_smbchg_chip->first_detect_float_work,
+				msecs_to_jiffies(0));
+			goto skip_current_for_non_sdp;
+		}
+		chip->usb_supply_type = POWER_SUPPLY_TYPE_USB_FLOAT;
+		rc = vote(chip->usb_icl_votable, PSY_ICL_VOTER, true,
+			current_limit);
+		goto skip_current_for_non_sdp;
+	}
+
+	if (prop.intval == POWER_SUPPLY_TYPE_USB_PD
+		|| prop.intval == POWER_SUPPLY_TYPE_USB_LE_PD)
+		goto  skip_current_for_non_sdp;
+
 	read_usb_type(chip, &usb_type_name, &usb_supply_type);
 
-	if (!rc && usb_supply_type == POWER_SUPPLY_TYPE_USB &&
+/*	if (!rc && usb_supply_type == POWER_SUPPLY_TYPE_USB &&
 			prop.intval != POWER_SUPPLY_TYPE_USB &&
-			is_usb_present(chip)) {
+			is_usb_present(chip)) {  */
 		/* incorrect type detected */
-		pr_smb(PR_MISC,
+/*		pr_smb(PR_MISC,
 			"Incorrect charger type detetced - rerun APSD\n");
 		chip->hvdcp_3_det_ignore_uv = true;
 		pr_smb(PR_MISC, "setting usb psy dp=f dm=f\n");
@@ -6887,7 +6914,7 @@ static void smbchg_external_power_changed(struct power_supply *psy)
 		if (usb_supply_type == POWER_SUPPLY_TYPE_USB_DCP)
 			schedule_delayed_work(&chip->hvdcp_det_work,
 				msecs_to_jiffies(HVDCP_NOTIFY_MS));
-	}
+	}   */
 
 	if (usb_supply_type != POWER_SUPPLY_TYPE_USB)
 		goto  skip_current_for_non_sdp;
