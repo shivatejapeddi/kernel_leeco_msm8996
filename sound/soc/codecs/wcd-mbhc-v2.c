@@ -1364,10 +1364,8 @@ restart_correct_detect:
 	} else {
 		if (!btn_result && !hs_comp_res)
 			plug_type = MBHC_PLUG_TYPE_HEADPHONE;
-#ifdef CONFIG_PRODUCT_LE_X2
 		else if (!btn_result && hs_comp_res)
-			plug_type = MBHC_PLUG_TYPE_HEADSET;
-#endif
+			plug_type = MBHC_PLUG_TYPE_HEADPHONE;
 		else
 			plug_type = MBHC_PLUG_TYPE_INVALID;
 	}
@@ -1390,8 +1388,7 @@ restart_correct_detect:
 		goto correct_plug_type;
 	}
 
-	if ((plug_type == MBHC_PLUG_TYPE_HEADSET &&
-	     plug_type == MBHC_PLUG_TYPE_HIGH_HPH) &&
+	if ((plug_type == MBHC_PLUG_TYPE_HEADSET) &&
 #else
 	if ((plug_type == MBHC_PLUG_TYPE_HEADSET ||
 	     plug_type == MBHC_PLUG_TYPE_HEADPHONE) &&
