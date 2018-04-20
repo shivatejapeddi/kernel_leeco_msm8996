@@ -4525,7 +4525,7 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 	dev_dbg(mdwc->dev, "%s state\n", state);
 #endif
 #ifdef CONFIG_PRODUCT_LE_X2
-	dev_info(mdwc->dev, "%s state\n", state);
+	dev_dbg(mdwc->dev, "%s state\n", state);
 #endif
 	dbg_event(0xFF, state, 0);
 

@@ -520,7 +520,7 @@ static int cnss_pci_runtime_suspend(struct device *dev)
 	    driver_ops->runtime_ops->runtime_suspend)
 		ret = driver_ops->runtime_ops->runtime_suspend(pci_dev);
 
-	cnss_pr_info("Runtime suspend status: %d\n", ret);
+	cnss_pr_debug("Runtime suspend status: %d\n", ret);
 
 	return ret;
 }
@@ -552,7 +552,7 @@ static int cnss_pci_runtime_resume(struct device *dev)
 	    driver_ops->runtime_ops->runtime_resume)
 		ret = driver_ops->runtime_ops->runtime_resume(pci_dev);
 
-	cnss_pr_info("Runtime resume status: %d\n", ret);
+	cnss_pr_dbg("Runtime resume status: %d\n", ret);
 
 	return ret;
 }
