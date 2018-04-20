@@ -3225,7 +3225,7 @@ exit_pm_resume:
 	return ret;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_NOIRQ
 static int msm_hs_pm_sys_suspend_noirq(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
@@ -3757,8 +3757,8 @@ static const struct dev_pm_ops msm_hs_dev_pm_ops = {
 	.runtime_suspend = msm_hs_runtime_suspend,
 	.runtime_resume = msm_hs_runtime_resume,
 	.runtime_idle = NULL,
-	.suspend_noirq = msm_hs_pm_sys_suspend_noirq,
-	.resume_noirq = msm_hs_pm_sys_resume_noirq,
+	//.suspend_noirq = msm_hs_pm_sys_suspend_noirq,
+	//.resume_noirq = msm_hs_pm_sys_resume_noirq,
 };
 
 static struct platform_driver msm_serial_hs_platform_driver = {
