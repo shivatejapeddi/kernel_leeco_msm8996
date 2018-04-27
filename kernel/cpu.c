@@ -414,6 +414,9 @@ out_release:
 int __ref cpu_down(unsigned int cpu)
 {
 	int err;
+                        
+    if (!cpu)
+		return -EINVAL;
 
 	cpu_maps_update_begin();
 
