@@ -67,6 +67,9 @@ module_param(enable_mpss_IPCRTR_ws, bool, 0664);
 static bool enable_qcom_rx_wakelock_ws = true;
 module_param(enable_qcom_rx_wakelock_ws, bool, 0664);
 
+static bool enable_wcnss_filter_lock_ws = true;
+module_param(enable_wcnss_filter_lock_ws, bool, 0664);
+
 static bool enable_wlan_rx_wake_ws = true;
 module_param(enable_wlan_rx_wake_ws, bool, 0664);
 
@@ -603,6 +606,8 @@ static bool wakeup_source_blocker(struct wakeup_source *ws)
 				!strncmp(ws->name, "bluedroid_timer", wslen)) ||
 			(!enable_wlan_wow_wl_ws &&
 				!strncmp(ws->name, "wlan_wow_wl", wslen)) ||	
+			(!enable_wcnss_filter_lock_ws &&
+				!strncmp(ws->name, "wcnss_filter_lock", wslen)) ||	
 			(!enable_qbt_ws &&
 				!strncmp(ws->name, "qbt_wake_source", wslen)) ||	
 			(!enable_rc0_pcie_ws &&
