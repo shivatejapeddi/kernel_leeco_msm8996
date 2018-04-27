@@ -89,7 +89,7 @@ struct qbt1000_drvdata {
 	struct wakeup_source w_lock;
 	struct qseecom_handle *app_handle;
 };
-#define W_LOCK_DELAY_MS (2000)
+#define W_LOCK_DELAY_MS (500)
 
 /**
  * get_cmd_rsp_buffers() - Function sets cmd & rsp buffer pointers and
