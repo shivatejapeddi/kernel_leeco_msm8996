@@ -46,7 +46,9 @@
 #ifdef OPEN_CHARGE_BIT
 #include <linux/power_supply.h>
 #endif
-
+#ifdef CONFIG_WAKE_GESTURES
+#include <linux/wake_gestures.h>
+#endif
 #ifdef KERNEL_ABOVE_2_6_38
 #include <linux/input/mt.h>
 #endif
@@ -140,6 +142,17 @@ static bool while_2d_status[MAX_NUMBER_OF_BUTTONS];
 #endif
 
 extern u32 synaptics_rmi4_get_config_id(void);
+ 
+#ifdef CONFIG_WAKE_GESTURES
+struct synaptics_rmi4_data *gl_rmi4_data;
+
+bool scr_suspended(void)
+{
+	struct synaptics_rmi4_data *rmi4_data = gl_rmi4_data;
+	return rmi4_data->suspend;
+}
+#endif
+
 static int synaptics_rmi4_check_status(struct synaptics_rmi4_data *rmi4_data,
 		bool *was_in_bl_mode);
 static int synaptics_rmi4_free_fingers(struct synaptics_rmi4_data *rmi4_data);
@@ -1313,6 +1326,11 @@ static int synaptics_rmi4_f12_abs_report(struct synaptics_rmi4_data *rmi4_data,
 		if (rmi4_data->hw_if->board_data->y_flip)
 			y = rmi4_data->sensor_max_y - y;
 
+#ifdef CONFIG_WAKE_GESTURES
+		if (rmi4_data->suspend && wg_switch)
+		        x += 5000;
+#endif
+			
 		switch (finger_status) {
 		case F12_FINGER_STATUS:
 		case F12_GLOVED_FINGER_STATUS:
@@ -4893,6 +4911,13 @@ static int synaptics_rmi4_suspend(struct device *dev)
 
 	if (rmi4_data->stay_awake)
 		return 0;
+#ifdef CONFIG_WAKE_GESTURES
+	if (wg_switch) {
+		enable_irq_wake(rmi4_data->irq);
+		goto exit;
+	}
+#endif
+
 #ifdef ESD_CHECK_SUPPORT
 	synaptics_rmi4_esd_switch(rmi4_data,SWITCH_OFF);
 #endif
@@ -4929,6 +4954,14 @@ exit:
 	}
 	mutex_unlock(&exp_data.mutex);
 
+#ifdef CONFIG_WAKE_GESTURES
+	if (wg_switch) {
+		rmi4_data->suspend = true;
+
+		return 0;
+	}
+#endif
+
 	rmi4_data->suspend = true;
 
 	return 0;
@@ -4954,12 +4987,27 @@ static int synaptics_rmi4_resume(struct device *dev)
 		}
 	}
 
+#ifdef CONFIG_WAKE_GESTURES
+	if (!wg_switch) {
+#endif	
 	if (bdata->reset_gpio >= 0) {
 		gpio_set_value(bdata->reset_gpio, bdata->reset_on_state);
 		msleep(bdata->reset_active_ms);
 		gpio_set_value(bdata->reset_gpio, !bdata->reset_on_state);
 		msleep(bdata->reset_delay_ms);
 	}
+#ifdef CONFIG_WAKE_GESTURES
+	}
+#endif
+
+#ifdef CONFIG_WAKE_GESTURES
+	if (wg_switch) {
+		disable_irq_wake(rmi4_data->irq);
+		synaptics_rmi4_force_cal(rmi4_data);
+		goto exit;
+	}
+#endif
+
 	if (rmi4_data->enable_wakeup_gesture) {
 		synaptics_rmi4_wakeup_gesture(rmi4_data, false);
 		disable_irq_wake(rmi4_data->irq);
@@ -4997,6 +5045,14 @@ exit:
 	mutex_unlock(&exp_data.mutex);
 
 	rmi4_data->suspend = false;
+
+	
+#ifdef CONFIG_WAKE_GESTURES
+	if (wg_changed) {
+		wg_switch = wg_switch_temp;
+		wg_changed = false;
+	}
+#endif
 
 	return 0;
 }
