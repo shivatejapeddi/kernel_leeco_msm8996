@@ -524,7 +524,6 @@ module_param_named(
 	int, S_IRUSR | S_IWUSR
 );
 
-#ifdef CONFIG_PRODUCT_LE_X2
 static int smbchg_default_le_pd_icl_ma = 3200;
 module_param_named(
 	default_le_pd_icl_ma, smbchg_default_le_pd_icl_ma,
