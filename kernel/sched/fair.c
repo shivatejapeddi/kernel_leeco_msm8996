@@ -6068,7 +6068,7 @@ static int cpu_util_wake(int cpu, struct task_struct *p)
 }
 
 static inline int find_best_target(struct task_struct *p, int *backup_cpu,
-				   bool prefer_idle)
+				   bool boosted, bool prefer_idle)
 {
 	struct root_domain *rd = cpu_rq(smp_processor_id())->rd;
 	unsigned long min_util = boosted_task_util(p);
@@ -6466,7 +6466,7 @@ static int select_energy_cpu_brute(struct task_struct *p, int prev_cpu, int sync
 	sync_entity_load_avg(&p->se);
 
 	/* Find a cpu with sufficient capacity */
-	next_cpu = find_best_target(p, &backup_cpu, prefer_idle);
+	next_cpu = find_best_target(p, &backup_cpu, boosted, prefer_idle);
 	if (next_cpu == -1) {
 		target_cpu = prev_cpu;
 		return target_cpu;
