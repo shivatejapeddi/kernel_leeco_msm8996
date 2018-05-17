@@ -40,6 +40,7 @@
 #include <linux/input.h>
 #include <linux/gpio.h>
 #include <linux/platform_device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/regulator/consumer.h>
 #include <linux/input/synaptics_dsx_v26.h>
 #include "synaptics_dsx_core.h"
@@ -1712,6 +1713,8 @@ static irqreturn_t synaptics_rmi4_irq(int irq, void *data)
 	if (gpio_get_value(bdata->irq_gpio) != bdata->irq_on_state)
 		goto exit;
 
+    pm_wakeup_event(&rmi4_data->pdev->dev,100);
+
 	rmi4_data->timestamp = ktime_get();
 
 	synaptics_rmi4_sensor_report(rmi4_data, true);
@@ -1794,6 +1797,7 @@ static int synaptics_rmi4_irq_enable(struct synaptics_rmi4_data *rmi4_data,
 		if (retval < 0)
 			return retval;
 
+        enable_irq_wake(rmi4_data->irq);
 		rmi4_data->irq_enabled = true;
 	} else {
 		if (rmi4_data->irq_enabled) {
@@ -4301,6 +4305,9 @@ static int synaptics_rmi4_probe(struct platform_device *pdev)
 	mutex_init(&(rmi4_data->rmi4_exp_init_mutex));
 
 	platform_set_drvdata(pdev, rmi4_data);
+
+
+	device_init_wakeup(&pdev->dev, 1);
 
 	vir_button_map = bdata->vir_button_map;
 
