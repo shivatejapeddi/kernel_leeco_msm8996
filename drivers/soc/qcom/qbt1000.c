@@ -89,7 +89,7 @@ struct qbt1000_drvdata {
 	struct wakeup_source w_lock;
 	struct qseecom_handle *app_handle;
 };
-#define W_LOCK_DELAY_MS (500)
+#define W_LOCK_DELAY_MS (1500)
 
 /**
  * get_cmd_rsp_buffers() - Function sets cmd & rsp buffer pointers and
@@ -195,7 +195,7 @@ static void clocks_off(struct qbt1000_drvdata *drvdata)
 #define SNS_QFP_CLOSE_REQ_V01 0x0021
 #define SNS_QFP_CLOSE_RESP_V01 0x0021
 #define SNS_QFP_VERSION_REQ_V01 0x0001
-#define TIMEOUT_MS			(500)
+#define TIMEOUT_MS			(1000)
 
 struct sns_common_resp_s_v01 {
 	uint8_t sns_result_t;
@@ -569,6 +569,7 @@ static void qbt1000_qmi_ind_cb(struct qmi_handle *handle, unsigned int msg_id,
 {
 }
 
+
 static void qbt1000_qmi_connect_to_service(struct qbt1000_drvdata *drvdata)
 {
 	int rc = 0;
@@ -711,6 +712,9 @@ out:
 	if (rc)
 		atomic_inc(&drvdata->available);
 
+    if( !rc ) 
+        __pm_stay_awake(&drvdata->w_lock);
+
 	return rc;
 }
 
@@ -736,6 +740,9 @@ static int qbt1000_release(struct inode *inode, struct file *file)
 	}
 
 	atomic_inc(&drvdata->available);
+
+    __pm_relax(&drvdata->w_lock);
+
 	return 0;
 }
 
@@ -1379,20 +1386,20 @@ static int qbt1000_suspend(struct device *dev)
 
 static int qbt1000_runtime_suspend(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct qbt1000_drvdata *drvdata = platform_get_drvdata(pdev);
+	//struct platform_device *pdev = to_platform_device(dev);
+	//struct qbt1000_drvdata *drvdata = platform_get_drvdata(pdev);
 
-	__pm_relax(&drvdata->w_lock);
+	//__pm_relax(&drvdata->w_lock);
 
 	return 0;
 };
 
 static int qbt1000_runtime_resume(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct qbt1000_drvdata *drvdata = platform_get_drvdata(pdev);
+	//struct platform_device *pdev = to_platform_device(dev);
+	//struct qbt1000_drvdata *drvdata = platform_get_drvdata(pdev);
 
-	__pm_stay_awake(&drvdata->w_lock);
+	//__pm_stay_awake(&drvdata->w_lock);
 
 	return 0;
 };
