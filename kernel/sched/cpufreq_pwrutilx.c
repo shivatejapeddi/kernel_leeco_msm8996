@@ -126,6 +126,17 @@ static bool pwrgov_up_down_rate_limit(struct pwrgov_policy *sg_policy, u64 time,
     return false;
 }
 
+static void pwrgov_fast_switch(struct cpufreq_policy *policy,
+			      unsigned int next_freq)
+{
+	next_freq = cpufreq_driver_fast_switch(policy, next_freq);
+	if (next_freq == CPUFREQ_ENTRY_INVALID)
+		return;
+
+	policy->cur = next_freq;
+	trace_cpu_frequency(next_freq, smp_processor_id());
+}
+
 static void pwrgov_update_commit(struct pwrgov_policy *sg_policy, u64 time,
 		unsigned int next_freq)
 {
@@ -141,12 +152,7 @@ static void pwrgov_update_commit(struct pwrgov_policy *sg_policy, u64 time,
     sg_policy->last_freq_update_time = time;
 
     if (policy->fast_switch_enabled) {
-	next_freq = cpufreq_driver_fast_switch(policy, next_freq);
-	if (next_freq == CPUFREQ_ENTRY_INVALID)
-	    return;
-
-	policy->cur = next_freq;
-	trace_cpu_frequency(next_freq, smp_processor_id());
+	pwrgov_fast_switch(policy, next_freq);
     } else {
 	sg_policy->work_in_progress = true;
 	irq_work_queue(&sg_policy->irq_work);
@@ -390,9 +396,15 @@ static void pwrgov_work(struct kthread_work *work)
 
 static void pwrgov_irq_work(struct irq_work *irq_work)
 {
-    struct pwrgov_policy *sg_policy;
+    struct pwrgov_policy *sg_policy = container_of(irq_work, struct
+						      pwrgov_policy, irq_work);
+    struct cpufreq_policy *policy = sg_policy->policy;
 
-    sg_policy = container_of(irq_work, struct pwrgov_policy, irq_work);
+    if (policy->fast_switch_enabled) {
+		pwrgov_fast_switch(policy, sg_policy->next_freq);
+		sg_policy->work_in_progress = false;
+		return;
+	}
 
     /*
      * For RT and deadline tasks, the pwrutilx governor shoots the
