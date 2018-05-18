@@ -287,7 +287,7 @@ static void pwrgov_iowait_boost(struct pwrgov_cpu *sg_cpu, unsigned long *util,
 #ifdef CONFIG_NO_HZ_COMMON
 static bool pwrgov_cpu_is_busy(struct pwrgov_cpu *sg_cpu)
 {
-    unsigned long idle_calls = tick_nohz_get_idle_calls();
+    unsigned long idle_calls = tick_nohz_get_idle_calls_cpu(sg_cpu->cpu);
     bool ret = idle_calls == sg_cpu->saved_idle_calls;
 
     sg_cpu->saved_idle_calls = idle_calls;
