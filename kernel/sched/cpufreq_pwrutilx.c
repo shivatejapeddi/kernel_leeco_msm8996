@@ -64,6 +64,7 @@ struct pwrgov_policy {
 struct pwrgov_cpu {
     struct update_util_data update_util;
     struct pwrgov_policy *sg_policy;
+    unsigned int cpu;
 
     unsigned long iowait_boost;
     unsigned long iowait_boost_max;
@@ -88,6 +89,21 @@ static DEFINE_PER_CPU(struct pwrgov_tunables, cached_tunables);
 static bool pwrgov_should_update_freq(struct pwrgov_policy *sg_policy, u64 time)
 {
     s64 delta_ns;
+
+     /*
+     * Since cpufreq_update_util() is called with rq->lock held for
+     * the @target_cpu, our per-cpu data is fully serialized.
+     *
+     * However, drivers cannot in general deal with cross-cpu
+     * requests, so while get_next_freq() will work, our
+     * pwrgov_update_commit() call may not.
+     *
+     * Hence stop here for remote requests if they aren't supported
+     * by the hardware, as calculating the frequency is pointless if
+     * we cannot in fact act on it.
+     */
+    if (!cpufreq_can_do_remote_dvfs(sg_policy->policy))
+	return false;
 
     if (sg_policy->work_in_progress)
 	return false;
@@ -205,9 +221,8 @@ static inline bool use_pelt(void)
 #endif
 }
 
-static void pwrgov_get_util(unsigned long *util, unsigned long *max, u64 time)
+static void pwrgov_get_util(unsigned long *util, unsigned long *max, int cpu, u64 time)
 {
-    int cpu = smp_processor_id();
     struct rq *rq = cpu_rq(cpu);
     unsigned long max_cap, rt;
     s64 delta;
@@ -297,7 +312,7 @@ static void pwrgov_update_single(struct update_util_data *hook, u64 time,
     if (flags & SCHED_CPUFREQ_DL) {
 	next_f = policy->cpuinfo.max_freq;
     } else {
-	pwrgov_get_util(&util, &max, time);
+	pwrgov_get_util(&util, &max, sg_cpu->cpu, time);
 	pwrgov_iowait_boost(sg_cpu, &util, &max);
 	next_f = get_next_freq(sg_policy, util, max);
 	/*
@@ -359,7 +374,7 @@ static void pwrgov_update_shared(struct update_util_data *hook, u64 time,
     unsigned long util, max;
     unsigned int next_f;
 
-    pwrgov_get_util(&util, &max, time);
+    pwrgov_get_util(&util, &max, sg_cpu->cpu, time);
 
     raw_spin_lock(&sg_policy->update_lock);
 
@@ -869,6 +884,11 @@ struct cpufreq_governor cpufreq_gov_pwrutilx = {
 
 static int __init pwrgov_register(void)
 {
+    int cpu;
+
+    for_each_possible_cpu(cpu)
+	per_cpu(pwrgov_cpu, cpu).cpu = cpu;
+
     return cpufreq_register_governor(&cpufreq_gov_pwrutilx);
 }
 fs_initcall(pwrgov_register);
