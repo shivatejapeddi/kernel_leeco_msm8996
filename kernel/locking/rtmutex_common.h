@@ -15,6 +15,28 @@
 #include <linux/rtmutex.h>
 
 /*
+ * The rtmutex in kernel tester is independent of rtmutex debugging. We
+ * call schedule_rt_mutex_test() instead of schedule() for the tasks which
+ * belong to the tester. That way we can delay the wakeup path of those
+ * threads to provoke lock stealing and testing of  complex boosting scenarios.
+ */
+#ifdef CONFIG_RT_MUTEX_TESTER
+
+extern void schedule_rt_mutex_test(struct rt_mutex *lock);
+
+#define schedule_rt_mutex(_lock)				\
+  do {								\
+	if (!(current->flags & PF_MUTEX_TESTER))		\
+		schedule();					\
+	else							\
+		schedule_rt_mutex_test(_lock);			\
+  } while (0)
+
+#else
+# define schedule_rt_mutex(_lock)			schedule()
+#endif
+
+/*
  * This is the control structure for tasks blocked on a rt_mutex,
  * which is allocated on the kernel stack on of the blocked task.
  *
@@ -33,7 +55,6 @@ struct rt_mutex_waiter {
 	struct rt_mutex		*deadlock_lock;
 #endif
 	int prio;
-	u64 deadline;
 };
 
 /*
@@ -41,32 +62,31 @@ struct rt_mutex_waiter {
  */
 static inline int rt_mutex_has_waiters(struct rt_mutex *lock)
 {
-	return !RB_EMPTY_ROOT(&lock->waiters.rb_root);
+	return !RB_EMPTY_ROOT(&lock->waiters);
 }
 
 static inline struct rt_mutex_waiter *
 rt_mutex_top_waiter(struct rt_mutex *lock)
 {
-	struct rb_node *leftmost = rb_first_cached(&lock->waiters);
-	struct rt_mutex_waiter *w = NULL;
+	struct rt_mutex_waiter *w;
 
-	if (leftmost) {
-		w = rb_entry(leftmost, struct rt_mutex_waiter, tree_entry);
-		BUG_ON(w->lock != lock);
-	}
+	w = rb_entry(lock->waiters_leftmost, struct rt_mutex_waiter,
+		     tree_entry);
+	BUG_ON(w->lock != lock);
+
 	return w;
 }
 
 static inline int task_has_pi_waiters(struct task_struct *p)
 {
-	return !RB_EMPTY_ROOT(&p->pi_waiters.rb_root);
+	return !RB_EMPTY_ROOT(&p->pi_waiters);
 }
 
 static inline struct rt_mutex_waiter *
 task_top_pi_waiter(struct task_struct *p)
 {
-	return rb_entry(p->pi_waiters.rb_leftmost,
-			struct rt_mutex_waiter, pi_tree_entry);
+	return rb_entry(p->pi_waiters_leftmost, struct rt_mutex_waiter,
+			pi_tree_entry);
 }
 
 /*
@@ -104,27 +124,13 @@ extern void rt_mutex_init_proxy_locked(struct rt_mutex *lock,
 				       struct task_struct *proxy_owner);
 extern void rt_mutex_proxy_unlock(struct rt_mutex *lock,
 				  struct task_struct *proxy_owner);
-extern void rt_mutex_init_waiter(struct rt_mutex_waiter *waiter);
-extern int __rt_mutex_start_proxy_lock(struct rt_mutex *lock,
-				     struct rt_mutex_waiter *waiter,
-				     struct task_struct *task);
 extern int rt_mutex_start_proxy_lock(struct rt_mutex *lock,
 				     struct rt_mutex_waiter *waiter,
 				     struct task_struct *task);
-extern int rt_mutex_wait_proxy_lock(struct rt_mutex *lock,
-			       struct hrtimer_sleeper *to,
-			       struct rt_mutex_waiter *waiter);
-extern bool rt_mutex_cleanup_proxy_lock(struct rt_mutex *lock,
-				 struct rt_mutex_waiter *waiter);
-
-extern int rt_mutex_futex_trylock(struct rt_mutex *l);
-extern int __rt_mutex_futex_trylock(struct rt_mutex *l);
-
-extern void rt_mutex_futex_unlock(struct rt_mutex *lock);
-extern bool __rt_mutex_futex_unlock(struct rt_mutex *lock,
-				 struct wake_q_head *wqh);
-
-extern void rt_mutex_postunlock(struct wake_q_head *wake_q);
+extern int rt_mutex_finish_proxy_lock(struct rt_mutex *lock,
+				      struct hrtimer_sleeper *to,
+				      struct rt_mutex_waiter *waiter);
+extern int rt_mutex_timed_futex_lock(struct rt_mutex *l, struct hrtimer_sleeper *to);
 
 #ifdef CONFIG_DEBUG_RT_MUTEXES
 # include "rtmutex-debug.h"
