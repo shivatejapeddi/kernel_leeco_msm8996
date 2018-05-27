@@ -28,9 +28,6 @@
 #include "mdss_dba_utils.h"
 #endif
 
-#ifdef CONFIG_POWERSUSPEND
-#include <linux/powersuspend.h>
-#endif
 #include "mdss_livedisplay.h"
 
 #define DT_CMD_HDR 6
@@ -876,12 +873,6 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 	struct dsi_panel_cmds *on_cmds;
 	int ret = 0;
 
-	display_on = true;
-
-#ifdef CONFIG_POWERSUSPEND
-	set_power_suspend_state_panel_hook(POWER_SUSPEND_INACTIVE);
-#endif
-
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
 		return -EINVAL;
@@ -1026,10 +1017,6 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	mdss_dsi_panel_off_hdmi(ctrl, pinfo);
 
 	display_on = false;
-
-#ifdef CONFIG_POWERSUSPEND
-	set_power_suspend_state_panel_hook(POWER_SUSPEND_ACTIVE);
-#endif
 
 end:
 	/* clear idle state */
