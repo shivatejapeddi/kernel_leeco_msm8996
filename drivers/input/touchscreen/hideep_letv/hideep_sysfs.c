@@ -220,13 +220,13 @@ static ssize_t chipid_show(struct device *dev, struct device_attribute *attr, ch
     return len;
 }
 
-static DEVICE_ATTR(update, 0644, read_ucode, fuse_ucode);
-static DEVICE_ATTR(vr_data, 0644, r_vr_data, w_vr_data);
-static DEVICE_ATTR(version, 0444, version_show, NULL);
-static DEVICE_ATTR(loglevel, 0644, loglevel_show, loglevel_store);
-static DEVICE_ATTR(power_en, 0644, power_status, power_control);
-static DEVICE_ATTR(selftest, 0660, NULL, self_mode);
-static DEVICE_ATTR(chipid, 0444, chipid_show, NULL);
+static DEVICE_ATTR(update, 0775, read_ucode, fuse_ucode);
+static DEVICE_ATTR(vr_data,	0775, r_vr_data, w_vr_data);
+static DEVICE_ATTR(version, 0775, version_show, NULL);
+static DEVICE_ATTR(loglevel, 0775,	loglevel_show, loglevel_store);
+static DEVICE_ATTR(power_en, 0775, power_status, power_control);
+static DEVICE_ATTR(selftest, 0775, NULL, self_mode);
+static DEVICE_ATTR(chipid, 0775, chipid_show, NULL);
 
 static struct attribute *hideep_3d_sysfs_entries[] = {
 	&dev_attr_update.attr,

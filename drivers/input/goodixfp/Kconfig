@@ -1,11 +1,6 @@
-#
-# Goodix fingerprint sensor
-#
-config INPUT_GP5XX8
-	tristate "Goodix GP5XX8 driver support"
+config INPUT_GP5xx8
+	tristate "goodix GP5xx8 driver support"
 	depends on INPUT
 	help
-	  Say Y here if you want to support Goodix 5208
-	  fingerprint sensor.
+	  Say Y here if you want to support goodix 5208 etc...
 
-	  If unsure, say N.

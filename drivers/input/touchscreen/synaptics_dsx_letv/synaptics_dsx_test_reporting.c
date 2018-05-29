@@ -40,7 +40,7 @@
 #include <linux/ctype.h>
 #include <linux/hrtimer.h>
 #include <linux/platform_device.h>
-#include <linux/input/synaptics_dsx_letv.h>
+#include <linux/input/synaptics_dsx_v26.h>
 #include "synaptics_dsx_core.h"
 #include <asm/uaccess.h>
 
@@ -204,9 +204,9 @@ static ssize_t concat(test_sysfs, _##propname##_show)(\
 		char *buf);\
 \
 static struct device_attribute dev_attr_##propname =\
-		__ATTR(propname, S_IRUGO,\
+		__ATTR(propname, 0644,\
 		concat(test_sysfs, _##propname##_show),\
-		NULL);
+		synaptics_rmi4_store_error);
 
 #define store_prototype(propname)\
 static ssize_t concat(test_sysfs, _##propname##_store)(\
@@ -215,8 +215,8 @@ static ssize_t concat(test_sysfs, _##propname##_store)(\
 		const char *buf, size_t count);\
 \
 static struct device_attribute dev_attr_##propname =\
-		__ATTR(propname, S_IWUSR | S_IWGRP,\
-		NULL,\
+		__ATTR(propname, 0664,\
+		synaptics_rmi4_show_error,\
 		concat(test_sysfs, _##propname##_store));
 
 #define show_store_prototype(propname)\
@@ -231,7 +231,7 @@ static ssize_t concat(test_sysfs, _##propname##_store)(\
 		const char *buf, size_t count);\
 \
 static struct device_attribute dev_attr_##propname =\
-		__ATTR(propname, (S_IRUGO | S_IWUSR | S_IWGRP),\
+		__ATTR(propname, (0664),\
 		concat(test_sysfs, _##propname##_show),\
 		concat(test_sysfs, _##propname##_store));
 

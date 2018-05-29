@@ -39,7 +39,7 @@
 #define SYNAPTICS_DSX_DRIVER_PRODUCT (SYNAPTICS_DS4 | SYNAPTICS_DS5)
 #define SYNAPTICS_DSX_DRIVER_VERSION 0x2050
 
-#ifdef CONFIG_MACH_LEECO_ZL1
+#ifdef CONFIG_PRODUCT_LE_ZL1
 #define OPEN_CHARGE_BIT
 #define ESD_CHECK_SUPPORT
 #endif
@@ -120,11 +120,9 @@
 #define MASK_2BIT 0x03
 #define MASK_1BIT 0x01
 
-#ifdef CONFIG_MACH_LEECO_ZL1
 #define PINCTRL_STATE_ACTIVE    "pmx_ts_active"
 #define PINCTRL_STATE_SUSPEND   "pmx_ts_suspend"
 #define PINCTRL_STATE_RELEASE   "pmx_ts_release"
-#endif
 
 enum exp_fn {
 	RMI_DEV = 0,
@@ -403,12 +401,11 @@ struct synaptics_rmi4_data {
 			bool attn_only);
 	void (*sleep_enable)(struct synaptics_rmi4_data *rmi4_data,
 			bool enable);
-#ifdef CONFIG_MACH_LEECO_ZL1
 	struct pinctrl *ts_pinctrl;
 	struct pinctrl_state *pinctrl_state_active;
 	struct pinctrl_state *pinctrl_state_suspend;
 	struct pinctrl_state *pinctrl_state_release;
-#endif
+	ktime_t timestamp;
 };
 
 
@@ -466,6 +463,22 @@ static inline int synaptics_rmi4_reg_write(
 		unsigned short len)
 {
 	return rmi4_data->hw_if->bus_access->write(rmi4_data, addr, data, len);
+}
+
+static inline ssize_t synaptics_rmi4_show_error(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	dev_warn(dev, "%s Attempted to read from write-only attribute %s\n",
+			__func__, attr->attr.name);
+	return -EPERM;
+}
+
+static inline ssize_t synaptics_rmi4_store_error(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	dev_warn(dev, "%s Attempted to write to read-only attribute %s\n",
+			__func__, attr->attr.name);
+	return -EPERM;
 }
 
 static inline int secure_memcpy(unsigned char *dest, unsigned int dest_size,
