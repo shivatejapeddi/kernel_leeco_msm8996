@@ -289,7 +289,6 @@ config CPU_FREQ_GOV_PWRUTILX
 
 comment "CPU frequency scaling drivers"
 
-<<<<<<< HEAD
 config CPU_BOOST
 	tristate "Event base short term CPU freq boost"
 	default y
@@ -302,7 +301,6 @@ config CPU_BOOST
 
 	  If in doubt, say N.
 
-=======
 config CPU_FREQ_GOV_LIONFISH
 	tristate "'lionfish' governor"
 	depends on CPU_FREQ
@@ -328,7 +326,6 @@ config CPU_FREQ_GOV_LIONFISH
 config CPU_FREQ_GOV_DARKNESS
 	tristate "'darkness' cpufreq policy governor"
 
->>>>>>> 562f720... Add lionfish and darkness Governors
 config CPUFREQ_DT
 	tristate "Generic DT based cpufreq driver"
 	depends on HAVE_CLK && OF
