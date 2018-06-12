@@ -31,3 +31,5 @@ obj-$(CONFIG_SENSORS_HALL)	+= hall_sensor.o
 
 obj-$(CONFIG_INPUT_FPC1020)	+= fpc1020/
 obj-$(CONFIG_INPUT_GP5xx8)	+= goodixfp/
+
+obj-$(CONFIG_SENSORS_HALL)	+= hall_sensor.o

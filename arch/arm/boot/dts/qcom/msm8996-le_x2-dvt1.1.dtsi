@@ -2,6 +2,7 @@
 #include "dsi-panel-sharp-dualmipi-cmd-le_x2-dvt1_1.dtsi"
 #include "dsi-panel-truly-dualmipi-cmd-le_x2-dvt2.dtsi"
 #include "letv-tp-atmel_mxt_ts-le_x2-dvt1.1.dtsi"
+
 &mdss_dsi0 {
 	qcom,dsi-pref-prim-pan = <&dsi_dual_sharp_cmd>;
 	/delete-property/ vddio-supply;
@@ -34,6 +35,7 @@
 
 &soc {
 	sound-9335 {
+                compatible = "qcom,msm8996-asoc-snd-tasha";
 		qcom,model = "msm8996-tasha-mtp-snd-card";
 
 		qcom,audio-routing =
@@ -97,8 +99,9 @@
 		/delete-property/ qcom,hph-en1-gpio;
 		/delete-property/ qcom,hph-en0-gpio;
 		/delete-property/ qcom,us-euro-gpios;
-		/delete-property/ qcom,wsa-devs;
-		/delete-property/ qcom,wsa-aux-dev-prefix;
+		qcom,wsa-max-devs = <0>;
+		qcom,wsa-devs = <0>;
+		qcom,wsa-aux-dev-prefix = <0>;
 	};
 };
 

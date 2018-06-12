@@ -230,11 +230,11 @@ int apr_wait_for_device_up(int dest_id)
 	if (dest_id == APR_DEST_MODEM)
 		rc = wait_event_interruptible_timeout(modem_wait,
 				    (apr_get_modem_state() == APR_SUBSYS_UP),
-				    (1 * HZ));
+				     msecs_to_jiffies(1000));
 	else if (dest_id == APR_DEST_QDSP6)
 		rc = wait_event_interruptible_timeout(dsp_wait,
 				    (apr_get_q6_state() == APR_SUBSYS_UP),
-				    (1 * HZ));
+				     msecs_to_jiffies(1000));
 	else
 		pr_err("%s: unknown dest_id %d\n", __func__, dest_id);
 	/* returns left time */
@@ -608,7 +608,8 @@ void apr_cb_func(void *buf, int len, void *priv)
 
 	temp_port = ((data.dest_port >> 8) * 8) + (data.dest_port & 0xFF);
 	pr_debug("port = %d t_port = %d\n", data.src_port, temp_port);
-	if (c_svc->port_cnt && c_svc->port_fn[temp_port])
+	if (((temp_port >= 0) && (temp_port < APR_MAX_PORTS))
+		&& (c_svc->port_cnt && c_svc->port_fn[temp_port]))
 		c_svc->port_fn[temp_port](&data,  c_svc->port_priv[temp_port]);
 	else if (c_svc->fn)
 		c_svc->fn(&data, c_svc->priv);

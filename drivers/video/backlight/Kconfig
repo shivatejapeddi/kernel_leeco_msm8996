@@ -449,7 +449,6 @@ config BACKLIGHT_LM3697
 	  Say Y to enable the backlight driver for TI LM3697.
 	  Up to 3 backlight strings and 11 bit dimming is supported.
 	  PWM brightness control is also supported.
- 
 
 endif # BACKLIGHT_CLASS_DEVICE
 

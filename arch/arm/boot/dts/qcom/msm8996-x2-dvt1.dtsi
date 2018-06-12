@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  */
 
-#include "msm8996-mtp.dtsi"
+#include "msm8996-mtp-le-common.dtsi"
 #include "msm8996-pinctrl-x2.dtsi"
 #include "dsi-panel-truly-dualmipi-cmd-x2-dvt1.dtsi"
 #include "letv-tp-synaptics-dsx-i2c.dtsi"
@@ -230,8 +230,9 @@
 		/delete-property/ qcom,hph-en1-gpio;
 		/delete-property/ qcom,hph-en0-gpio;
 		/delete-property/ qcom,us-euro-gpios;
-		/delete-property/ qcom,wsa-devs;
-		/delete-property/ qcom,wsa-aux-dev-prefix;
+		qcom,wsa-max-devs = <0>;
+		qcom,wsa-devs = <0>;
+		qcom,wsa-aux-dev-prefix = <0>;
 	};
 
 	ir-remote {

@@ -87,8 +87,8 @@ struct gf_key_map key_map[] =
 
 
 /**************************debug******************************/
-#define GF_DEBUG
-/*#undef  GF_DEBUG*/
+//#define GF_DEBUG
+#undef  GF_DEBUG
 
 #ifdef  GF_DEBUG
 #define gf_dbg(fmt, args...) do { \
@@ -113,7 +113,7 @@ struct wake_lock FP_wakelock;
 static void gf_enable_irq(struct gf_dev *gf_dev)
 {
 	if (gf_dev->irq_enabled) {
-		pr_warn("IRQ has been enabled.\n");
+		pr_debug("IRQ has been enabled.\n");
 	} else {
 		enable_irq(gf_dev->irq);
 		gf_dev->irq_enabled = 1;
@@ -126,7 +126,7 @@ static void gf_disable_irq(struct gf_dev *gf_dev)
 		gf_dev->irq_enabled = 0;
 		disable_irq(gf_dev->irq);
 	} else {
-		pr_warn("IRQ has been disabled.\n");
+ 		pr_debug("IRQ has been disabled.\n");
 	}
 }
 
@@ -415,12 +415,12 @@ gf_compat_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 static irqreturn_t gf_irq(int irq, void *handle)
 {
 	struct gf_dev *gf_dev = &gf;
-	wake_lock_timeout(&FP_wakelock,10*HZ);
+	wake_lock_timeout(&FP_wakelock,msecs_to_jiffies(1000));
 #ifdef GF_FASYNC
 	if (gf_dev->async)
 		kill_fasync(&gf_dev->async, SIGIO, POLL_IN);
 #endif
-	printk("goodix goodix goodix  ---------\n");
+        pr_debug("goodix goodix goodix  ---------\n");
 	return IRQ_HANDLED;
 }
 

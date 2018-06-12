@@ -119,6 +119,10 @@ static int phy_tune[64],phy_tune_n;
 module_param_array(phy_tune, int, &phy_tune_n,  S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(phy_tune, "QUSB PHY TUNE SEQ");
 
+static int phy_tune[64],phy_tune_n;
+module_param_array(phy_tune, int, &phy_tune_n,  S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(phy_tune, "QUSB PHY TUNE SEQ");
+
 unsigned int tune2;
 module_param(tune2, uint, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(tune2, "QUSB PHY TUNE2");

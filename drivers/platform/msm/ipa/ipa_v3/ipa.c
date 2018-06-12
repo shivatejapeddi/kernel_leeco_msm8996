@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -636,8 +636,8 @@ static int ipa3_send_wan_msg(unsigned long usr_param,
 		/* cache the cne event */
 		memcpy(&ipa3_ctx->ipa_cne_evt_req_cache[
 			ipa3_ctx->num_ipa_cne_evt_req].wan_msg,
-			wan_msg,
-			sizeof(struct ipa_wan_msg));
+			&cache_wan_msg,
+			sizeof(cache_wan_msg));
 
 		memcpy(&ipa3_ctx->ipa_cne_evt_req_cache[
 			ipa3_ctx->num_ipa_cne_evt_req].msg_meta,
@@ -2091,6 +2091,12 @@ static void ipa3_q6_avoid_holb(void)
 			if (ep_idx == -1)
 				continue;
 
+			/* from IPA 4.0 pipe suspend is not supported */
+			if (ipa3_ctx->ipa_hw_type < IPA_HW_v4_0)
+				ipahal_write_reg_n_fields(
+				IPA_ENDP_INIT_CTRL_n,
+				ep_idx, &ep_suspend);
+
 			/*
 			 * ipa3_cfg_ep_holb is not used here because we are
 			 * setting HOLB on Q6 pipes, and from APPS perspective
@@ -2103,10 +2109,6 @@ static void ipa3_q6_avoid_holb(void)
 			ipahal_write_reg_n_fields(
 				IPA_ENDP_INIT_HOL_BLOCK_EN_n,
 				ep_idx, &ep_holb);
-
-			ipahal_write_reg_n_fields(
-				IPA_ENDP_INIT_CTRL_n,
-				ep_idx, &ep_suspend);
 		}
 	}
 }
@@ -2594,6 +2596,8 @@ void ipa3_q6_pre_shutdown_cleanup(void)
 	  * on pipe reset procedure
 	  */
 	ipa3_q6_pipe_delay(false);
+
+	ipa3_set_usb_prod_pipe_delay();
 
 	IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 	IPADBG_LOW("Exit with success\n");
@@ -4434,11 +4438,15 @@ static int ipa3_post_init(const struct ipa3_plat_drv_res *resource_p,
 
 	/*
 	 * IPAv3.5 and above requires to disable prefetch for USB in order
-	 * to allow MBIM to work, currently MBIM is not needed in MHI mode.
+	 * to allow MBIM to work.
 	 */
 	if ((ipa3_ctx->ipa_hw_type >= IPA_HW_v3_5) &&
 		(!ipa3_ctx->ipa_config_is_mhi))
 		ipa3_disable_prefetch(IPA_CLIENT_USB_CONS);
+
+	if ((ipa3_ctx->ipa_hw_type >= IPA_HW_v3_5) &&
+		(ipa3_ctx->ipa_config_is_mhi))
+		ipa3_disable_prefetch(IPA_CLIENT_MHI_CONS);
 
 	if (ipa3_ctx->transport_prototype == IPA_TRANSPORT_TYPE_GSI) {
 		memset(&gsi_props, 0, sizeof(gsi_props));
@@ -4872,6 +4880,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	ipa3_ctx->apply_rg10_wa = resource_p->apply_rg10_wa;
 	ipa3_ctx->gsi_ch20_wa = resource_p->gsi_ch20_wa;
 	ipa3_ctx->ipa3_active_clients_logging.log_rdy = false;
+	ipa3_ctx->ipa_config_is_mhi = resource_p->ipa_mhi_dynamic_config;
 	if (resource_p->ipa_tz_unlock_reg) {
 		ipa3_ctx->ipa_tz_unlock_reg_num =
 			resource_p->ipa_tz_unlock_reg_num;
@@ -5253,7 +5262,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 	if (result) {
 		IPAERR("Failed to alloc pkt_init payload\n");
 		result = -ENODEV;
-		goto fail_create_apps_resource;
+		goto fail_allok_pkt_init;
 	}
 
 	if (ipa3_ctx->ipa_hw_type >= IPA_HW_v3_5)
@@ -5263,6 +5272,13 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 
 	init_completion(&ipa3_ctx->init_completion_obj);
 	init_completion(&ipa3_ctx->uc_loaded_completion_obj);
+
+	result = ipa3_dma_setup();
+	if (result) {
+		IPAERR("Failed to setup IPA DMA\n");
+		result = -ENODEV;
+		goto fail_ipa_dma_setup;
+	}
 
 	/*
 	 * For GSI, we can't register the GSI driver yet, as it expects
@@ -5278,7 +5294,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 			if (result) {
 				IPAERR("gsi pre FW loading config failed\n");
 				result = -ENODEV;
-				goto fail_ipa_init_interrupts;
+				goto fail_gsi_pre_fw_load_init;
 			}
 		}
 	} else {
@@ -5289,7 +5305,7 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 		result = ipa3_post_init(resource_p, ipa_dev);
 		if (result) {
 			IPAERR("ipa3_post_init failed\n");
-			goto fail_ipa_post_init;
+			goto fail_gsi_pre_fw_load_init;
 		}
 	}
 
@@ -5309,13 +5325,13 @@ static int ipa3_pre_init(const struct ipa3_plat_drv_res *resource_p,
 
 	return 0;
 
+
+
 fail_cdev_add:
-fail_ipa_post_init:
-	if (ipa3_bus_scale_table) {
-		msm_bus_cl_clear_pdata(ipa3_bus_scale_table);
-		ipa3_bus_scale_table = NULL;
-	}
-fail_ipa_init_interrupts:
+fail_gsi_pre_fw_load_init:
+	ipa3_dma_shutdown();
+fail_ipa_dma_setup:
+fail_allok_pkt_init:
 	ipa_rm_delete_resource(IPA_RM_RESOURCE_APPS_CONS);
 fail_create_apps_resource:
 	ipa_rm_exit();
@@ -5360,18 +5376,21 @@ fail_flt_rule_cache:
 fail_create_transport_wq:
 	destroy_workqueue(ipa3_ctx->power_mgmt_wq);
 fail_init_hw:
+	ipahal_destroy();
+fail_ipahal:
 	iounmap(ipa3_ctx->mmio);
 fail_remap:
 	ipa3_disable_clks();
-fail_init_active_client:
 	ipa3_active_clients_log_destroy();
+fail_init_active_client:
 fail_clk:
 	if (ipa3_ctx->ipa3_hw_mode != IPA_HW_MODE_VIRTUAL)
 		msm_bus_scale_unregister_client(ipa3_ctx->ipa_bus_hdl);
-fail_ipahal:
-	ipa3_bus_scale_table = NULL;
 fail_bus_reg:
-	ipahal_destroy();
+	if (ipa3_bus_scale_table) {
+		msm_bus_cl_clear_pdata(ipa3_bus_scale_table);
+		ipa3_bus_scale_table = NULL;
+	}
 fail_bind:
 	kfree(ipa3_ctx->ctrl);
 fail_mem_ctrl:
@@ -5401,6 +5420,7 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 	ipa_drv_res->ipa_bam_remote_mode = false;
 	ipa_drv_res->modem_cfg_emb_pipe_flt = false;
 	ipa_drv_res->ipa_wdi2 = false;
+	ipa_drv_res->ipa_mhi_dynamic_config = false;
 	ipa_drv_res->use_64_bit_dma_mask = false;
 	ipa_drv_res->wan_rx_ring_size = IPA_GENERIC_RX_POOL_SZ;
 	ipa_drv_res->lan_rx_ring_size = IPA_GENERIC_RX_POOL_SZ;
@@ -5461,6 +5481,13 @@ static int get_ipa_dts_configuration(struct platform_device *pdev,
 			"qcom,use-ipa-tethering-bridge");
 	IPADBG(": using TBDr = %s",
 		ipa_drv_res->use_ipa_teth_bridge
+		? "True" : "False");
+
+	ipa_drv_res->ipa_mhi_dynamic_config =
+			of_property_read_bool(pdev->dev.of_node,
+			"qcom,use-ipa-in-mhi-mode");
+	IPADBG(": ipa_mhi_dynamic_config (%s)\n",
+		ipa_drv_res->ipa_mhi_dynamic_config
 		? "True" : "False");
 
 	ipa_drv_res->ipa_bam_remote_mode =
