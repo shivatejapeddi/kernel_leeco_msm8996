@@ -35,6 +35,9 @@ module_param(enable_video2_ws, bool, 0664);
 static bool enable_wlan_wow_wl_ws = true;
 module_param(enable_wlan_wow_wl_ws, bool, 0664);
 
+static bool enable_wlan_pno_wl_ws = true;
+module_param(enable_wlan_pno_wl_ws, bool, 0664);
+
 static bool enable_qbt_ws = true;
 module_param(enable_qbt_ws, bool, 0664);
 
@@ -67,7 +70,10 @@ module_param(enable_wlan_ctrl_wake_ws, bool, 0664);
 
 static bool enable_wlan_wake_ws = true;
 module_param(enable_wlan_wake_ws, bool, 0664);
-                                        
+
+static bool enable_wlan_ipa_ws = true;
+module_param(enable_wlan_ipa_ws, bool, 0664);
+
 static bool enable_wlan_extscan_wl_ws = true;
 module_param(enable_wlan_extscan_wl_ws, bool, 0664);
 
@@ -571,6 +577,8 @@ static bool wakeup_source_blocker(struct wakeup_source *ws)
 				!strncmp(ws->name, "netmgr_wl", wslen)) ||
 			(!enable_wlan_wake_ws &&
 				!strncmp(ws->name, "wlan_wake", wslen)) ||
+                        (!enable_wlan_ipa_ws &&
+                                !strncmp(ws->name, "wlan_ipa", wslen)) ||
 			(!enable_wlan_rx_wake_ws &&
 				!strncmp(ws->name, "wlan_rx_wake", wslen)) ||
 			(!enable_qpnp_fg_update_sram_ws &&
@@ -594,23 +602,25 @@ static bool wakeup_source_blocker(struct wakeup_source *ws)
 			(!enable_bluedroid_timer_ws &&
 				!strncmp(ws->name, "bluedroid_timer", wslen)) ||
 			(!enable_wlan_wow_wl_ws &&
-				!strncmp(ws->name, "wlan_wow_wl", wslen)) ||	
+				!strncmp(ws->name, "wlan_wow_wl", wslen)) ||
+                        (!enable_wlan_pno_wl_ws &&
+                                !strncmp(ws->name, "wlan_pno_wl", wslen)) ||
 			(!enable_wcnss_filter_lock_ws &&
-				!strncmp(ws->name, "wcnss_filter_lock", wslen)) ||	
+				!strncmp(ws->name, "wcnss_filter_lock", wslen)) ||
 			(!enable_qbt_ws &&
-				!strncmp(ws->name, "qbt_wake_source", wslen)) ||	
+				!strncmp(ws->name, "qbt_wake_source", wslen)) ||
 			(!enable_rc0_pcie_ws &&
-				!strncmp(ws->name, "RC0 pcie_wakeup_source", wslen)) ||	
+				!strncmp(ws->name, "RC0 pcie_wakeup_source", wslen)) ||
 			(!enable_rc1_pcie_ws &&
-				!strncmp(ws->name, "RC1 pcie_wakeup_source", wslen)) ||	
+				!strncmp(ws->name, "RC1 pcie_wakeup_source", wslen)) ||
 			(!enable_FLP_srv_ws &&
 				!(strstr(ws->name, "FLP") == NULL) ) ||
 			(!enable_battery_ws &&
-				!strncmp(ws->name, "battery", wslen)) ||	
+				!strncmp(ws->name, "battery", wslen)) ||
 			(!enable_usb_ws &&
-				!strncmp(ws->name, "usb", wslen)) ||	
+				!strncmp(ws->name, "usb", wslen)) ||
 			(!enable_video2_ws &&
-				!strncmp(ws->name, "video2", wslen)) ||	
+				!strncmp(ws->name, "video2", wslen)) ||
 			(!enable_wlan_ctrl_wake_ws &&
 				!strncmp(ws->name, "wlan_ctrl_wake", wslen))) {
 			if (ws->active) {
