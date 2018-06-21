@@ -32,16 +32,16 @@ module_param(enable_ssusb_ws, bool, 0664);
 static bool enable_video2_ws = true;
 module_param(enable_video2_ws, bool, 0664);
 
-static bool enable_wlan_wow_wl_ws = true;
+static bool enable_wlan_wow_wl_ws = false;
 module_param(enable_wlan_wow_wl_ws, bool, 0664);
 
-static bool enable_wlan_pno_wl_ws = true;
+static bool enable_wlan_pno_wl_ws = false;
 module_param(enable_wlan_pno_wl_ws, bool, 0664);
 
-static bool enable_qbt_ws = true;
+static bool enable_qbt_ws = false;
 module_param(enable_qbt_ws, bool, 0664);
 
-static bool enable_wlan_ws = true;
+static bool enable_wlan_ws = false;
 module_param(enable_wlan_ws, bool, 0664);
 
 static bool enable_rc0_pcie_ws = true;
@@ -59,7 +59,7 @@ module_param(enable_mpss_IPCRTR_ws, bool, 0664);
 static bool enable_qcom_rx_wakelock_ws = true;
 module_param(enable_qcom_rx_wakelock_ws, bool, 0664);
 
-static bool enable_wcnss_filter_lock_ws = true;
+static bool enable_wcnss_filter_lock_ws = false;
 module_param(enable_wcnss_filter_lock_ws, bool, 0664);
 
 static bool enable_wlan_rx_wake_ws = true;
@@ -68,16 +68,16 @@ module_param(enable_wlan_rx_wake_ws, bool, 0664);
 static bool enable_wlan_ctrl_wake_ws = true;
 module_param(enable_wlan_ctrl_wake_ws, bool, 0664);
 
-static bool enable_wlan_wake_ws = true;
+static bool enable_wlan_wake_ws = false;
 module_param(enable_wlan_wake_ws, bool, 0664);
 
-static bool enable_wlan_ipa_ws = true;
+static bool enable_wlan_ipa_ws = false;
 module_param(enable_wlan_ipa_ws, bool, 0664);
 
 static bool enable_wlan_extscan_wl_ws = true;
 module_param(enable_wlan_extscan_wl_ws, bool, 0664);
 
-static bool enable_bluedroid_timer_ws = true;
+static bool enable_bluedroid_timer_ws = false;
 module_param(enable_bluedroid_timer_ws, bool, 0664);
 
 static bool enable_ipa_ws = false;
