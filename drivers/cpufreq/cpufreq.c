@@ -2383,8 +2383,9 @@ int cpufreq_get_policy(struct cpufreq_policy *policy, unsigned int cpu)
 }
 EXPORT_SYMBOL(cpufreq_get_policy);
 
-#ifdef CONFIG_MACH_XIAOMI_GEMINI
+#ifdef CONFIG_VENDOR_LEECO
 #define UNDERCLK_MAX_LITTLECL 1478400
+#define UNDERCLK_MAX_BIGCL 1824000
 static bool disable_underclock;
 module_param_named(disable_underclock,
     disable_underclock, bool, S_IRUGO | S_IWUSR | S_IWGRP);
@@ -2400,7 +2401,7 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 	struct cpufreq_governor *old_gov;
 	int ret;
 
-#ifdef CONFIG_MACH_XIAOMI_GEMINI
+#ifdef CONFIG_VENDOR_LEECO
     if (!disable_underclock) {
 	if (new_policy->cpu < 2) {
 	    if (new_policy->max > UNDERCLK_MAX_LITTLECL)
