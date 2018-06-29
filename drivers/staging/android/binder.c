@@ -510,7 +510,7 @@ binder_proc_unlock(struct binder_proc *proc, int line)
 {
 	binder_debug(BINDER_DEBUG_SPINLOCKS,
 		     "%s: line=%d\n", __func__, line);
-	spin_unlock(&node->lock);
+	spin_unlock(&proc->proc_lock);
 }
 
 static inline void
@@ -4664,8 +4664,6 @@ static void binder_clear_zombies(void)
 static void binder_deferred_func(struct work_struct *work)
 {
 	struct binder_proc *proc;
-	struct files_struct *files;
-
 	int defer;
 
 	do {
