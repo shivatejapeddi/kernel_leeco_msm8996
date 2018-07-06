@@ -638,10 +638,15 @@ config SND_SOC_WCD9335
 config SND_SOC_WSA881X_SENSORS
 	tristate
 
+# TODO: Change WSA881X_PA to SND_SOC_WSA881X_PA.
+config WSA881X_PA
+        tristate
+
 config SND_SOC_WSA881X
         tristate
 	select REGMAP_SWR
 	select SND_SOC_WSA881X_SENSORS
+	select WSA881X_PA
 
 config SND_SOC_WSA881X_ANALOG
         tristate
@@ -888,9 +893,9 @@ config SND_SOC_TFA98XX
 	  monitoring switches by userspace via sysfs and uevent.
 
 config SND_SOC_MAX98927
-	tristate "Audio SMART PA 98927 support"
+	tristate "Maxim audio amplifier support"
 	help
-	  Say Y here to enable Audio SMART PA support. This allows
+	  Say Y here to enable smart PA audio support. This allows
 	  monitoring switches by userspace via sysfs and uevent.
 
 config SOUND_CONTROL
