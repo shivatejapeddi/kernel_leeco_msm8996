@@ -101,3 +101,5 @@ obj-$(CONFIG_TOUCHSCREEN_GT9XX)		+= gt9xx/
 obj-$(CONFIG_TOUCHSCREEN_HIDEEP_TP_LETV)		+= hideep_letv/
 obj-$(CONFIG_LETVS_CLASS)       +=  letv_clss.o
 obj-$(CONFIG_TOUCHSCREEN_FTS) 		+= focaltech_letv/
+
+obj-$(CONFIG_TOUCHSCREEN_HIMAX_CHIPSET)	+= hxchipset/
