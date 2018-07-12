@@ -198,4 +198,5 @@ source "drivers/bif/Kconfig"
 
 source "drivers/letv/Kconfig"
 
+source "drivers/energy_model/Kconfig"
 endmenu
