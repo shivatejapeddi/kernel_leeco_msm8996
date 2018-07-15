@@ -721,6 +721,7 @@ static void snd_usb_audio_disconnect(struct usb_device *dev,
 				     struct snd_usb_audio *chip)
 {
 	struct snd_card *card;
+	struct usb_mixer_interface *mixer;
 	struct list_head *p;
 	bool was_shutdown;
 
@@ -752,7 +753,8 @@ static void snd_usb_audio_disconnect(struct usb_device *dev,
 		}
 		/* release mixer resources */
 		list_for_each(p, &chip->mixer_list) {
-			snd_usb_mixer_disconnect(p);
+			mixer = list_entry(p, struct usb_mixer_interface, list);
+			snd_usb_mixer_disconnect(mixer);
 		}
 #ifdef CONFIG_VENDOR_LEECO
 		letv_usb_audio.is_letv_usb_audio = false;
