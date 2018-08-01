@@ -24,7 +24,7 @@ struct tusb302l_device_info *tusb302l_device_info = NULL;
 #define TUSB302L_REG2_ROLE_MODE_MASK	0x6
 #define TUSB302L_REG2_INTERRUPT_MASK	0x1
 
-extern int dwc3_set_msm_usb_host_mode(bool mode);
+extern int pi5usb_set_msm_usb_host_mode(bool mode);
 /*
 Write data to chip
 reg: register address
@@ -44,7 +44,7 @@ int tusb302l_start_usb_DRPMode(void)
 int tusb302l_start_usb_DFPMode(bool mode)
 {
 	printk("%s:\n", __func__);
-	dwc3_set_msm_usb_host_mode(mode);
+	pi5usb_set_msm_usb_host_mode(mode);
 	return 0;
 }
 

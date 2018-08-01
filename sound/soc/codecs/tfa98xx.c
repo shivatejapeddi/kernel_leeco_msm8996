@@ -1035,7 +1035,7 @@ static int tfa98xx_set_vstep(struct snd_kcontrol *kcontrol,
 		tfa98xx_close(0);
 
 		/* Enable internal clk (osc1m) to switch profile */
-		if ((tfa98xx_dev_family(tfa98xx->handle) == 2) && (ready == 0)) {
+		if ((tfa98xx_dev_family(tfa98xx->handle) == 2)) {
 			/* Disable interrupts (Enabled again in the wrapper function: tfa98xx_tfa_start) */
 			regmap_write(tfa98xx->regmap, base_addr_inten + 1, 0);
 			/* Set polarity to high */
@@ -1111,12 +1111,16 @@ static int tfa98xx_set_profile(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 #endif
 	struct tfa98xx *tfa98xx = snd_soc_codec_get_drvdata(codec);
-	
+
+#ifdef NO_SOUND
 	unsigned int base_addr_inten = TFA_FAM(tfa98xx->handle,INTENVDDS) >> 8;
+#endif
 	int profile_count = tfa98xx_mixer_profiles;
 	int profile = tfa98xx_mixer_profile;
 	int new_profile = ucontrol->value.integer.value[0];
+#ifdef NO_SOUND
 	int err;
+#endif
 	int ready = 0;
 	int prof_idx;
 
@@ -1160,6 +1164,7 @@ static int tfa98xx_set_profile(struct snd_kcontrol *kcontrol,
 	tfa98xx_dsp_system_stable(tfa98xx->handle, &ready);
 	tfa98xx_close(tfa98xx->handle);
 
+#ifdef NO_SOUND
 	/* Enable internal clk (osc1m) to switch profile */
 	if (tfa98xx_dev_family(tfa98xx->handle) == 2) {
 		/* Disable interrupts (Enabled again in the wrapper function: tfa98xx_tfa_start) */
@@ -1191,6 +1196,7 @@ static int tfa98xx_set_profile(struct snd_kcontrol *kcontrol,
 		TFA_SET_BF(tfa98xx->handle, REFCKSEL, 0);
 		TFA_SET_BF_VOLATILE(tfa98xx->handle, SBSL, 1);
 	}
+#endif
 
 	mutex_unlock(&tfa98xx->dsp_lock);
 

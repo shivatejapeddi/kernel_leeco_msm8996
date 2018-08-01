@@ -276,51 +276,47 @@ config USB_QTI_KS_BRIDGE
 	  To compile this driver as a module, choose M here: the module
 	  will be called ks_bridge. If unsure, choose N.
 
-menuconfig USB_CCLOGIC
-	bool "LeTV USB Type-C logic support"
+config USB_CCLOGIC
+	bool "USB cc logic"
 	help
-	  Support querying the USB Type-C activity for multi purpose iterations.
-
-if USB_CCLOGIC
-
-config USB_CCLOGIC_TUSB302L
-	default y if PRODUCT_LE_X2=y
-	bool "USB Type-C logic TUSB302L driver"
-	help
-	  This driver is for Type-C logic chip TUSB302L.
-
-config USB_CCLOGIC_TUSB320
-	default y if MACH_LEECO_ZL1=y
-	bool "USB Type-C logic TUSB320 driver"
-	help
-	  This driver is for Type-C logic chip TUSB320.
+	  This driver is for cc logic chip
 
 config USB_CCLOGIC_PI5USB
-	default y if PRODUCT_LE_X2=y
-	bool "USB Type-C logic PI5USB driver"
+	bool "USB cc logic PI5USB"
 	help
-	  This driver is for Type-C logic chip PI5USB.
+	  This driver is for cc logic chip PI5USB
+
+config USB_CCLOGIC_TUSB302L
+	bool "USB cc logic TUSB302L"
+	help
+	  This driver is for cc logic chip TUSB302L
 
 config USB_CCLOGIC_PTN5150
-	default y if MACH_LEECO_ZL1=y
-	bool "USB Type-C logic PTN5150 driver"
+	bool "USB cc logic PTN5150"
 	help
-	  This driver is for Type-C logic chip PTN5150.
+	  This driver is for cc logic chip PTN5150
 
 config USB_CCLOGIC_PER30216
-	default y if MACH_LEECO_ZL1=y
-	bool "USB Type-C logic PER30216 driver"
+	bool "USB cc logic PERICOM30216"
 	help
-	  This driver is for Type-C logic chip PER30216.
+	  This driver is for cc logic chip PERICOM30216
 
-endif
+config USB_CCLOGIC_TUSB320
+	bool "USB cc logic TUSB320"
+	help
+	  This driver is for cc logic chip TUSB320
 
 config USB_CYCCG
 	tristate "Cypress USB Type-C and PD Controller"
 	depends on I2C
+	default y
 	help
 	  This driver adds support for Cypress USB Type-C and PD Controller
 	  devices. It enables user mode CCG Application access CCG firmware
 	  register map directly.
 
+	  Say Y here if you have a Cypress USB Type-C and PD Controller device
+	  integrated in the system.
 
+	  To compile this driver as a module, choose M here: the module will be
+	  called cyccg.
