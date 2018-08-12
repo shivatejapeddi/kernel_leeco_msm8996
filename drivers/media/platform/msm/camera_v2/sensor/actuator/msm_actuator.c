@@ -22,6 +22,8 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <media/msm_cam_sensor.h>
+#include <linux/cpu_input_boost.h>
+#include <linux/devfreq_boost.h>
 
 DEFINE_MSM_MUTEX(msm_actuator_mutex);
 
@@ -810,6 +812,10 @@ static int32_t msm_actuator_move_focus(
 	CDBG("called, dir %d, num_steps %d\n", dir, num_steps);
 
 	if (dest_step_pos == a_ctrl->curr_step_pos)
+		
+	cpu_input_boost_kick_max(150);
+	devfreq_boost_kick_max(DEVFREQ_MSM_CPUBW, 200);
+	
 		return rc;
 
 	if ((sign_dir > MSM_ACTUATOR_MOVE_SIGNED_NEAR) ||
