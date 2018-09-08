@@ -1589,7 +1589,7 @@ static void msm_vfe47_axi_clear_wm_xbar_reg(
 }
 
 
-static void msm_vfe47_cfg_axi_ub_equal_default(
+void msm_vfe47_cfg_axi_ub_equal_default(
 	struct vfe_device *vfe_dev)
 {
 	int i;
@@ -1617,13 +1617,6 @@ static void msm_vfe47_cfg_axi_ub_equal_default(
 	} else {
 		pr_err("%s: incorrect VFE device\n", __func__);
 	}
-	if (!total_image_size) {
-		pr_err("%s: Error total_image_size is 0\n", __func__);
-		return;
-	}
-	prop_size = vfe_dev->hw_info->vfe_ops.axi_ops.
-		get_ub_size(vfe_dev) -
-		axi_data->hw_info->min_wm_ub * num_used_wms;
 	for (i = 0; i < axi_data->hw_info->num_wm; i++) {
 		if (axi_data->free_wm[i]) {
 			delta = (uint64_t)axi_data->wm_image_size[i] *
