@@ -1488,13 +1488,6 @@ static int msm_isp_update_deliver_count(struct vfe_device *vfe_dev,
 			goto done;
 		}
 		temp_stream_info->sw_ping_pong_bit ^= 1;
-		if (temp_stream_info->undelivered_request_cnt == 0) {
-			temp_stream_info->current_framedrop_period =
-				MSM_VFE_STREAM_STOP_PERIOD;
-			temp_stream_info->activated_framedrop_period =
-				MSM_VFE_STREAM_STOP_PERIOD;
-			msm_isp_cfg_framedrop_reg(vfe_dev, temp_stream_info);
-		}
 	}
 done:
 	return rc;
@@ -1506,38 +1499,12 @@ void msm_isp_halt_send_error(struct vfe_device *vfe_dev, uint32_t event)
 	struct msm_isp_event_data error_event;
 	struct msm_vfe_axi_halt_cmd halt_cmd;
 	uint32_t irq_status0, irq_status1;
-	struct vfe_device *vfe_dev_other = NULL;
-	uint32_t vfe_id_other = 0;
-	unsigned long flags;
 
 	if (atomic_read(&vfe_dev->error_info.overflow_state) !=
 		NO_OVERFLOW)
 		/* Recovery is already in Progress */
 		return;
-	/* if there are no active streams - do not start recovery */
-	if (vfe_dev->is_split) {
-		if (vfe_dev->pdev->id == ISP_VFE0)
-			vfe_id_other = ISP_VFE1;
-		else
-			vfe_id_other = ISP_VFE0;
 
-		spin_lock_irqsave(
-			&vfe_dev->common_data->common_dev_data_lock, flags);
-		vfe_dev_other = vfe_dev->common_data->dual_vfe_res->
-			vfe_dev[vfe_id_other];
-		if (!vfe_dev->axi_data.num_active_stream ||
-			!vfe_dev_other->axi_data.num_active_stream) {
-			spin_unlock_irqrestore(
-				&vfe_dev->common_data->common_dev_data_lock,
-				flags);
-			pr_err("%s:skip the recovery as no active streams\n",
-				 __func__);
-			return;
-		}
-		spin_unlock_irqrestore(
-			&vfe_dev->common_data->common_dev_data_lock, flags);
-	} else if (!vfe_dev->axi_data.num_active_stream)
-		return;
 	if (ISP_EVENT_PING_PONG_MISMATCH == event &&
 		vfe_dev->axi_data.recovery_count < MAX_RECOVERY_THRESHOLD) {
 		vfe_dev->hw_info->vfe_ops.irq_ops.
@@ -1695,7 +1662,7 @@ static int msm_isp_cfg_ping_pong_address(struct vfe_device *vfe_dev,
 	dma_addr_t paddr;
 	struct dual_vfe_resource *dual_vfe_res = NULL;
 	uint32_t vfe_id = 0;
-	unsigned long flags;
+	unsigned long flags = 0;
 
 	if (stream_idx >= VFE_AXI_SRC_MAX) {
 		pr_err("%s: Invalid stream_idx", __func__);
@@ -2625,11 +2592,10 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev,
 			vfe_dev->pdev->id);
 		vfe_dev->axi_data.src_info[VFE_PIX_0].frame_id = 0;
 	}
-	mutex_lock(&vfe_dev->buf_mgr->lock);
+
 	for (i = 0; i < stream_cfg_cmd->num_streams; i++) {
 		if (HANDLE_TO_IDX(stream_cfg_cmd->stream_handle[i]) >=
 			VFE_AXI_SRC_MAX) {
-			mutex_unlock(&vfe_dev->buf_mgr->lock);
 			return -EINVAL;
 		}
 		stream_info = &axi_data->stream_info[
@@ -2639,7 +2605,6 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev,
 				SRC_TO_INTF(stream_info->stream_src)].active;
 		else {
 			ISP_DBG("%s: invalid src info index\n", __func__);
-			mutex_unlock(&vfe_dev->buf_mgr->lock);
 			return -EINVAL;
 		}
 
@@ -2653,7 +2618,6 @@ static int msm_isp_start_axi_stream(struct vfe_device *vfe_dev,
 				HANDLE_TO_IDX(
 				stream_cfg_cmd->stream_handle[i]));
 			spin_unlock_irqrestore(&stream_info->lock, flags);
-			mutex_unlock(&vfe_dev->buf_mgr->lock);
 			return rc;
 		}
 		spin_unlock_irqrestore(&stream_info->lock, flags);
@@ -3281,7 +3245,7 @@ static void msm_isp_remove_buf_queue(struct vfe_device *vfe_dev,
 int msm_isp_update_axi_stream(struct vfe_device *vfe_dev, void *arg)
 {
 	int rc = 0, i, j;
-	struct msm_vfe_axi_stream *stream_info;
+	struct msm_vfe_axi_stream *stream_info = NULL;
 	struct msm_vfe_axi_shared_data *axi_data = &vfe_dev->axi_data;
 	struct msm_vfe_axi_stream_update_cmd *update_cmd = arg;
 	struct msm_vfe_axi_stream_cfg_update_info *update_info;

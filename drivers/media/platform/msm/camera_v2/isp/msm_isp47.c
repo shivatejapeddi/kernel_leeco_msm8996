@@ -1589,7 +1589,7 @@ static void msm_vfe47_axi_clear_wm_xbar_reg(
 }
 
 
-void msm_vfe47_cfg_axi_ub_equal_default(
+static void msm_vfe47_cfg_axi_ub_equal_default(
 	struct vfe_device *vfe_dev)
 {
 	int i;
