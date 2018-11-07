@@ -298,6 +298,7 @@ struct smbchg_chip {
 #ifdef CONFIG_VENDOR_LEECO
 	struct delayed_work	    letv_pd_set_vol_cur_work;
 	struct delayed_work		pd_charger_init_work;
+	struct delayed_work	    	first_detect_float_work;
 #endif
 #ifdef CONFIG_VENDOR_LEECO
 	struct delayed_work		weak_charger_timeout_work;
@@ -400,6 +401,10 @@ enum wake_reason {
 
 #ifdef CONFIG_QPNP_MHL
 static int mhl_insert_flag;
+/* float charger detect flag */
+static int float_charger_flag = 0;
+static int fake_usb_removel_flag = 0;
+extern char g_boot_mode[];
 #endif
 
 /* fcc_voters */
@@ -686,6 +691,11 @@ module_param_named(
 		else							\
 			pr_debug_ratelimited(fmt, ##__VA_ARGS__);	\
 	} while (0)
+
+
+#ifdef CONFIG_PRODUCT_LE_X2
+static int fake_insertion_removal(struct smbchg_chip *chip, bool insertion);
+#endif
 
 static int smbchg_read(struct smbchg_chip *chip, u8 *val,
 			u16 addr, int count)
@@ -2227,6 +2237,13 @@ static int smbchg_set_usb_current_max(struct smbchg_chip *chip,
 				pr_err("Couldn't set override rc = %d\n", rc);
 		}
 #ifdef CONFIG_VENDOR_LEECO
+	case POWER_SUPPLY_TYPE_USB_FLOAT:
+		/* use override for FLOATED */
+		rc = smbchg_masked_write(chip,
+				chip->usb_chgpth_base + CMD_IL,
+				ICL_OVERRIDE_BIT, ICL_OVERRIDE_BIT);
+		if (rc < 0)
+			pr_err("Couldn't set override rc = %d\n", rc);
 	case POWER_SUPPLY_TYPE_USB_PD:
 		/* use override for PD */
 		rc = smbchg_masked_write(chip,
@@ -2414,6 +2431,35 @@ static int smbchg_parallel_usb_charging_en(struct smbchg_chip *chip, bool en)
 	return parallel_psy->set_property(parallel_psy,
 		POWER_SUPPLY_PROP_CHARGING_ENABLED, &pval);
 }
+
+#ifdef CONFIG_PRODUCT_LE_X2
+static void smbchg_first_detect_float_work(struct work_struct *work)
+{
+	struct smbchg_chip *chip = container_of(work,
+				struct smbchg_chip,
+				first_detect_float_work.work);
+	int rc;
+	pr_smb(PR_STATUS, "first detect float rerunning APSD\n");
+	rc = vote(chip->usb_icl_votable,
+			CHG_SUSPEND_WORKAROUND_ICL_VOTER, true, 300);
+	if (rc < 0)
+		pr_err("Couldn't vote for 300mA for suspend wa, going ahead rc=%d\n",
+				rc);
+	fake_usb_removel_flag = 1;
+	pr_smb(PR_STATUS, "Faking Removal\n");
+	fake_insertion_removal(chip, false);
+	msleep(500);
+	pr_smb(PR_STATUS, "Faking Insertion\n");
+	fake_insertion_removal(chip, true);
+	fake_usb_removel_flag = 0;
+
+	rc = vote(chip->usb_icl_votable,
+		CHG_SUSPEND_WORKAROUND_ICL_VOTER, false, 0);
+	if (rc < 0)
+		pr_err("Couldn't vote for 0 for suspend wa, going ahead rc=%d\n",
+			rc);
+}
+#endif
 
 #define ESR_PULSE_CURRENT_DELTA_MA	200
 static int smbchg_sw_esr_pulse_en(struct smbchg_chip *chip, bool en)
@@ -3646,7 +3692,7 @@ static int smbchg_black_call_icl_set(struct smbchg_chip *chip,
 /*
  * Control input current when in quick charge mode.
  */
-#define QUICK_CHARGE_MODE_CURRENT 1500
+#define QUICK_CHARGE_MODE_CURRENT 1000
 static int smbchg_quick_charge_icl_set(struct smbchg_chip *chip,
 				int quick_charge_val)
 {
@@ -5753,6 +5799,12 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 	else
 		current_limit_ma = smbchg_default_dcp_icl_ma;
 
+    if( chip->prev_quick_charge_mode ) {
+        if( current_limit_ma > QUICK_CHARGE_MODE_CURRENT ) {
+            current_limit_ma = QUICK_CHARGE_MODE_CURRENT;
+        }
+    }
+
 	pr_smb(PR_STATUS, "Type %d: setting mA = %d\n",
 		type, current_limit_ma);
 	rc = vote(chip->usb_icl_votable, PSY_ICL_VOTER, true,
@@ -5767,6 +5819,7 @@ static int smbchg_change_usb_supply_type(struct smbchg_chip *chip,
 		chip->usb_psy->set_property(chip->usb_psy,
 				POWER_SUPPLY_PROP_REAL_TYPE,
 				&propval);
+        power_supply_set_current_limit(chip->usb_psy, current_limit_ma*1000);
 	}
 
 	/*
@@ -5982,6 +6035,8 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 	pr_smb(PR_STATUS, "triggered\n");
 #ifdef CONFIG_VENDOR_LEECO
 	hvdcp_aicl_rerun = false;
+	if (fake_usb_removel_flag == 0)
+		float_charger_flag = 0;
 #endif
 	smbchg_aicl_deglitch_wa_check(chip);
 	/* Clear the OV detected status set before */
@@ -7189,18 +7244,33 @@ static void smbchg_external_power_changed(struct power_supply *psy)
 	rc = chip->usb_psy->get_property(chip->usb_psy,
 		POWER_SUPPLY_PROP_TYPE, &prop);
 
-	if (prop.intval == POWER_SUPPLY_TYPE_USB_PD
+    if ((rc == 0) && (prop.intval == POWER_SUPPLY_TYPE_USB_FLOAT)) {
+		if (float_charger_flag == 0 &&
+			/*strncmp(g_boot_mode, "charger", 7) &&*/
+			!IS_ERR_OR_NULL(pd_smbchg_chip)) {
+			float_charger_flag = 1;
+			schedule_delayed_work(
+				&pd_smbchg_chip->first_detect_float_work,
+				msecs_to_jiffies(0));
+			goto skip_current_for_non_sdp;
+		}
+		chip->usb_supply_type = POWER_SUPPLY_TYPE_USB_FLOAT;
+		rc = vote(chip->usb_icl_votable, PSY_ICL_VOTER, true,
+			current_limit);
+		goto skip_current_for_non_sdp;
+	}
+ 	if (prop.intval == POWER_SUPPLY_TYPE_USB_PD
 		|| prop.intval == POWER_SUPPLY_TYPE_USB_LE_PD)
 		goto  skip_current_for_non_sdp;
 #endif
 
 	read_usb_type(chip, &usb_type_name, &usb_supply_type);
 
-	if (!rc && usb_supply_type == POWER_SUPPLY_TYPE_USB &&
+/*	if (!rc && usb_supply_type == POWER_SUPPLY_TYPE_USB &&
 			prop.intval != POWER_SUPPLY_TYPE_USB &&
-			is_usb_present(chip)) {
+			is_usb_present(chip)) {  */
 		/* incorrect type detected */
-		pr_smb(PR_MISC,
+/*		pr_smb(PR_MISC,
 			"Incorrect charger type detetced - rerun APSD\n");
 		chip->hvdcp_3_det_ignore_uv = true;
 		pr_smb(PR_MISC, "setting usb psy dp=f dm=f\n");
@@ -7231,7 +7301,7 @@ static void smbchg_external_power_changed(struct power_supply *psy)
 		if (usb_supply_type == POWER_SUPPLY_TYPE_USB_DCP)
 			schedule_delayed_work(&chip->hvdcp_det_work,
 				msecs_to_jiffies(HVDCP_NOTIFY_MS));
-	}
+	} */
 
 	if (usb_supply_type != POWER_SUPPLY_TYPE_USB)
 		goto  skip_current_for_non_sdp;
@@ -10553,6 +10623,8 @@ static int smbchg_probe(struct spmi_device *spmi)
 		smbchg_letv_pd_set_vol_cur_work);
 	INIT_DELAYED_WORK(&chip->pd_charger_init_work,
 		smbchg_pd_charger_init_work);
+	INIT_DELAYED_WORK(&chip->first_detect_float_work,
+		smbchg_first_detect_float_work);
 #endif
 #ifdef CONFIG_VENDOR_LEECO
 	INIT_DELAYED_WORK(&chip->weak_charger_timeout_work, smbchg_weak_chg_timeout);
