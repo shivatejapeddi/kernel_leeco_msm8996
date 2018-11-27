@@ -205,9 +205,6 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_COOL_TEMP,
 	POWER_SUPPLY_PROP_WARM_TEMP,
 	POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL,
-#ifdef CONFIG_PRODUCT_LE_ZL1
-	POWER_SUPPLY_PROP_SYSTEM_SCN,
-#endif
 	POWER_SUPPLY_PROP_RESISTANCE,
 	POWER_SUPPLY_PROP_RESISTANCE_CAPACITIVE,
 	POWER_SUPPLY_PROP_RESISTANCE_ID, /* in Ohms */
@@ -263,13 +260,11 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_CONNECTOR_HEALTH,
 	POWER_SUPPLY_PROP_HW_CURRENT_MAX,
 	POWER_SUPPLY_PROP_REAL_TYPE,
-#ifdef CONFIG_VENDOR_LEECO
 	POWER_SUPPLY_PROP_LE_USBIN_TEMP,
 	POWER_SUPPLY_PROP_LE_VPH_VOLTAGE,
 	POWER_SUPPLY_PROP_LE_USB_TEMP_LEVEL,
 	POWER_SUPPLY_PROP_LE_BLACK_CALL_MODE,
 	POWER_SUPPLY_PROP_LE_QUICK_CHARGE_MODE,
-#endif
 	/* Local extensions of type int64_t */
 	POWER_SUPPLY_PROP_CHARGE_COUNTER_EXT,
 	/* Properties of type `const char *' */
@@ -290,12 +285,10 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_USB_ACA,	/* Accessory Charger Adapters */
 	POWER_SUPPLY_TYPE_USB_HVDCP,	/* High Voltage DCP */
 	POWER_SUPPLY_TYPE_USB_HVDCP_3,	/* Efficient High Voltage DCP */
-	POWER_SUPPLY_TYPE_USB_PD,	/* Power Delivery */
-#ifdef CONFIG_VENDOR_LEECO
-	POWER_SUPPLY_TYPE_USB_LE_PD,	/* LeTV PD Charger */
-#endif
+	POWER_SUPPLY_TYPE_USB_FLOAT,	/* float charger */
+	POWER_SUPPLY_TYPE_USB_PD,		/* general pd charger */
+	POWER_SUPPLY_TYPE_USB_LE_PD,	/* le pd charger */
 	POWER_SUPPLY_TYPE_WIRELESS,	/* Accessory Charger Adapters */
-	POWER_SUPPLY_TYPE_USB_FLOAT,	/* Floating charger */
 	POWER_SUPPLY_TYPE_BMS,		/* Battery Monitor System */
 	POWER_SUPPLY_TYPE_PARALLEL,	/* Parallel Path */
 	POWER_SUPPLY_TYPE_MAIN,		/* Main Path */
@@ -303,9 +296,7 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_TYPEC,	/* Type-C */
 	POWER_SUPPLY_TYPE_UFP,		/* Type-C UFP */
 	POWER_SUPPLY_TYPE_DFP,		/* TYpe-C DFP */
-#ifdef CONFIG_VENDOR_LEECO
-	POWER_SUPPLY_TYPE_LE_AB,	/* LeTV Userspace Monitor */
-#endif
+	POWER_SUPPLY_TYPE_LE_AB,	/* letv user defined */
 };
 
 /* Indicates USB Type-C CC connection status */

@@ -29,6 +29,9 @@
 #endif
 #include <linux/regulator/consumer.h>
 #include <linux/delay.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
+
 
 #define WLED_MOD_EN_REG(base, n)	(base + 0x60 + n*0x10)
 #define WLED_IDAC_DLY_REG(base, n)	(WLED_MOD_EN_REG(base, n) + 0x01)
@@ -263,6 +266,11 @@
 #define KPDBL_MASTER_BIT_INDEX		0
 #ifdef CONFIG_VENDOR_LEECO
 #define LED_DEV_BUFF_SIZE			50
+
+#ifdef CONFIG_DEEP_SLEEP_LED_SWITCH
+static int deep_sleep_gpio_level;
+static int deep_sleep_gpio_num;
+static const char *deep_sleep_gpio_label;
 #endif
 
 /**
@@ -583,6 +591,10 @@ struct qpnp_led_data {
 	struct mutex		brightness_lock;
 #endif
 };
+
+#ifdef CONFIG_DEEP_SLEEP_LED_SWITCH
+extern int sleep_light_control(bool enable);
+#endif
 
 /**
  * struct rgb_sync - rgb led synchrnize structure
@@ -2881,13 +2893,11 @@ static ssize_t blink_store(struct device *dev,
 		dev_err(&led->spmi_dev->dev, "Invalid LED id type for blink\n");
 		return -EINVAL;
 	}
-#ifdef CONFIG_VENDOR_LEECO
 	if (blinking)
 		led->rgb_cfg->pwm_cfg->blinking = blinking;
 #endif
 	return count;
 }
-
 #ifdef CONFIG_VENDOR_LEECO
 static ssize_t rgb_on_off_ms_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -2989,6 +2999,48 @@ static ssize_t rgb_start_store(struct device *dev,
 	return count;
 }
 #endif
+
+
+#ifdef CONFIG_DEEP_SLEEP_LED_SWITCH
+static ssize_t sleep_show(struct device *dev, struct device_attribute *attr,  char *buf)
+{
+	struct qpnp_led_data *led;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+	led = container_of(led_cdev, struct qpnp_led_data, cdev);
+	return snprintf(buf,LED_DEV_BUFF_SIZE,"%d\n",deep_sleep_gpio_level);
+}
+
+static ssize_t sleep_store(struct device *dev,struct device_attribute *attr,const char *buf, size_t count)
+{
+	unsigned long sleep_sign;
+	ssize_t ret = -EINVAL;
+	struct led_classdev *led_cdev = dev_get_drvdata(dev);
+
+	ret = kstrtoul(buf, 10, &sleep_sign);
+
+	if (ret)
+		return ret;
+
+
+	if (sleep_sign > 0)
+		sleep_sign = 1;
+	else
+		qpnp_led_set(led_cdev, 0);
+
+	if (deep_sleep_gpio_level != sleep_sign) {
+
+		deep_sleep_gpio_level = sleep_sign;
+		ret = sleep_light_control(sleep_sign);
+		if (ret){
+			pr_err("%s, error: %d\n", __func__, (int)ret);
+			return ret;
+		}
+	}
+	return count;
+}
+#endif
+
+
 
 static inline void rgb_lock_leds(struct rgb_sync *rgb)
 {
@@ -3117,25 +3169,17 @@ static ssize_t rgb_blink_store(struct device *dev,
 static DEVICE_ATTR(led_mode, 0664, NULL, led_mode_store);
 static DEVICE_ATTR(strobe, 0664, NULL, led_strobe_type_store);
 static DEVICE_ATTR(pwm_us, 0664, NULL, pwm_us_store);
-#ifdef CONFIG_VENDOR_LEECO
 static DEVICE_ATTR(pause_lo, 0664, pause_lo_show, pause_lo_store);
-#else
-static DEVICE_ATTR(pause_lo, 0664, NULL, pause_lo_store);
-#endif
 static DEVICE_ATTR(pause_hi, 0664, NULL, pause_hi_store);
 static DEVICE_ATTR(start_idx, 0664, NULL, start_idx_store);
-#ifdef CONFIG_VENDOR_LEECO
 static DEVICE_ATTR(ramp_step_ms, 0664, ramp_step_ms_show, ramp_step_ms_store);
-#else
-static DEVICE_ATTR(ramp_step_ms, 0664, NULL, ramp_step_ms_store);
-#endif
 static DEVICE_ATTR(lut_flags, 0664, NULL, lut_flags_store);
 static DEVICE_ATTR(duty_pcts, 0664, NULL, duty_pcts_store);
-#ifdef CONFIG_VENDOR_LEECO
-static DEVICE_ATTR(blink, 0664, blink_show, blink_store);
-#else
-static DEVICE_ATTR(blink, 0664, NULL, blink_store);
+#ifdef CONFIG_DEEP_SLEEP_LED_SWITCH
+static DEVICE_ATTR(sleep_sign, 0664, sleep_show, sleep_store);
 #endif
+
+static DEVICE_ATTR(blink, 0664, blink_show, blink_store);
 static DEVICE_ATTR(rgb_blink, 0664, NULL, rgb_blink_store);
 #ifdef CONFIG_VENDOR_LEECO
 static DEVICE_ATTR(on_off_ms, 0660, rgb_on_off_ms_show, rgb_on_off_ms_store);
@@ -3154,6 +3198,9 @@ static const struct attribute_group led_attr_group = {
 
 static struct attribute *pwm_attrs[] = {
 	&dev_attr_pwm_us.attr,
+#ifdef CONFIG_DEEP_SLEEP_LED_SWITCH
+	&dev_attr_sleep_sign.attr,
+#endif
 	NULL
 };
 
@@ -4401,6 +4448,24 @@ static int qpnp_leds_probe(struct spmi_device *spmi)
 			goto fail_id_check;
 		}
 
+#ifdef CONFIG_DEEP_SLEEP_LED_SWITCH
+		if ((strncmp(led_label, "rgb", 3) == 0)&&(led->id == 5)) {
+			deep_sleep_gpio_num =
+				of_get_named_gpio(node,
+				"deepsleep_gpio", 0);
+			deep_sleep_gpio_label =
+				of_get_property(node,
+				"deepsleep_gpio_label", NULL);
+			if (deep_sleep_gpio_label != NULL && deep_sleep_gpio_num) {
+			deep_sleep_gpio_level = 0;
+			gpio_request(deep_sleep_gpio_num,
+				deep_sleep_gpio_label);
+			gpio_direction_output(deep_sleep_gpio_num,
+				deep_sleep_gpio_level);
+			}
+		}
+#endif
+
 		rc = qpnp_get_common_configs(led, temp);
 		if (rc) {
 			dev_err(&led->spmi_dev->dev,
@@ -4745,4 +4810,3 @@ module_exit(qpnp_led_exit);
 MODULE_DESCRIPTION("QPNP LEDs driver");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("leds:leds-qpnp");
-
