@@ -243,9 +243,9 @@ enum fg_mem_data_index {
 static struct fg_mem_setting settings[FG_MEM_SETTING_MAX] = {
 	/*       ID                    Address, Offset, Value*/
 	SETTING(SOFT_COLD,       0x454,   0,      100),
-	SETTING(SOFT_HOT,        0x454,   1,      450),
+	SETTING(SOFT_HOT,        0x454,   1,      400),
 	SETTING(HARD_COLD,       0x454,   2,      50),
-	SETTING(HARD_HOT,        0x454,   3,      550),
+	SETTING(HARD_HOT,        0x454,   3,      450),
 	SETTING(RESUME_SOC,      0x45C,   1,      0),
 	SETTING(BCL_LM_THRESHOLD, 0x47C,   2,      50),
 	SETTING(BCL_MH_THRESHOLD, 0x47C,   3,      752),
@@ -2039,6 +2039,15 @@ static void fg_handle_battery_insertion(struct fg_chip *chip)
 		&chip->update_sram_data, msecs_to_jiffies(0));
 }
 
+static int soc_to_setpoint(int soc)
+{
+#ifdef CONFIG_VENDOR_LEECO
+	/* Return the original SoC delta. */
+	return soc;
+#else
+	return DIV_ROUND_CLOSEST(soc * 255, 100);
+#endif
+}
 
 static void batt_to_setpoint_adc(int vbatt_mv, u8 *data)
 {
@@ -3766,7 +3775,6 @@ static int fg_calc_and_store_cc_soc_coeff(struct fg_chip *chip, int16_t cc_mah)
 	return rc;
 }
 
-#define BAD_CAPACITY_VALUE	3100
 static void fg_cap_learning_load_data(struct fg_chip *chip)
 {
 	int16_t cc_mah;
@@ -3774,11 +3782,6 @@ static void fg_cap_learning_load_data(struct fg_chip *chip)
 	int rc;
 
 	rc = fg_mem_read(chip, (u8 *)&cc_mah, FG_AGING_STORAGE_REG, 2, 0, 0);
-
-	pr_info("Vid: fg_cap_learning_load_data %d\n", cc_mah);
-	if (chip->nom_cap_uah < BAD_CAPACITY_VALUE)
-		cc_mah = 0;
-
 	if (rc) {
 		pr_err("Failed to load aged capacity: %d\n", rc);
 	} else {
@@ -6786,6 +6789,21 @@ static void check_empty_work(struct work_struct *work)
 			power_supply_changed(&chip->bms_psy);
 	}
 
+#ifdef CONFIG_PRODUCT_LE_ZL1
+	if (empty_cn > 40) {
+		pr_err("low voltage, forcing shutdown immediately\n");
+		orderly_poweroff(true);
+	}
+
+	if (chip->soc_empty) {
+		empty_cn ++;
+		queue_delayed_work(system_power_efficient_wq,
+			&chip->check_empty_work, msecs_to_jiffies(FG_EMPTY_DEBOUNCE_MS));
+	} else {
+		empty_cn = 0;
+	}
+#endif
+
 out:
 	fg_relax(&chip->empty_check_wakeup_source);
 }
@@ -8146,14 +8164,6 @@ int fg_dfs_create(struct fg_chip *chip)
 		goto err_remove_fs;
 	}
 
-	/* create interface for dump all fg_regs. */
-	file = debugfs_create_file("fg_regs", S_IRUGO | S_IWUSR, root, chip,
-							&fg_regs_sys_ops);
-	if (!file) {
-		pr_err("error creating 'fg_regs' entry\n");
-		goto err_remove_fs;
-	}
-
 	return 0;
 
 err_remove_fs:
@@ -8251,7 +8261,7 @@ static int fg_common_hw_init(struct fg_chip *chip)
 	}
 
 	rc = fg_mem_masked_write(chip, settings[FG_MEM_DELTA_SOC].address, 0xFF,
-			settings[FG_MEM_DELTA_SOC].value,
+			soc_to_setpoint(settings[FG_MEM_DELTA_SOC].value),
 			settings[FG_MEM_DELTA_SOC].offset);
 	if (rc) {
 		pr_err("failed to write delta soc rc=%d\n", rc);

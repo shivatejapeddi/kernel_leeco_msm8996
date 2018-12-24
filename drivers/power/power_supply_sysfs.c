@@ -48,9 +48,9 @@ static ssize_t power_supply_show_property(struct device *dev,
 		"USB_CDP", "USB_ACA", "USB_HVDCP", "USB_HVDCP_3", "USB_PD",
 #ifdef CONFIG_VENDOR_LEECO
 		/* Introduce LE_PD USB power supply type. */
-		"USB_LE_PD", "USB_FLOAT",
+		"USB_LE_PD",
 #endif
-		"Wireless", "BMS", "Parallel", "Main", "Wipower",
+		"Wireless", "USB_FLOAT", "BMS", "Parallel", "Main", "Wipower",
 #ifdef CONFIG_VENDOR_LEECO
 		/* Introduce LE_AB USB power supply type. */
 		"TYPEC", "TYPEC_UFP", "TYPEC_DFP", "LE_AB"

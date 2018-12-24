@@ -54,7 +54,7 @@
   #define CYCCG_ENABLE_FW_IMAGE_APP_NAME_CHECK 0
   #define CYCCG_ENABLE_STATIC_FW_VER 1
   #if CYCCG_ENABLE_STATIC_FW_VER
-    #define CYCCG_LATEST_FW_MAJ_VER 3
+    #define CYCCG_LATEST_FW_MAJ_VER 2
     #define CYCCG_LATEST_FW_MIN_VER 9
   #endif
 #endif
@@ -489,7 +489,6 @@ static bool typec_uart_scheduled = false;
 static bool typec_vbus_vconn_state = false;
 static bool typec_connect_state = false;
 static int typec_headset_with_analog = -1;
-int letv_cdla_with_analog = -1;
 
 enum cyccg_init_work_state {
 	CYCCG_WORK_NONE,
@@ -1003,7 +1002,6 @@ void cyccg_cclogic_set_audio_mode(bool mode)
 			cyccg_analog_headset_plugin = true;
 		}
 		typec_headset_with_analog = 1;
-		letv_cdla_with_analog = 1;
 	} else {
 		cclogic_set_vconn(false);
 		gpio_set_value(pdata->gpio_uart_sw, 0);
@@ -1023,7 +1021,6 @@ void cyccg_cclogic_set_audio_mode(bool mode)
 		pr_info("cyccg set usb to host mode\n");
 		pdata->mode = DFP_MODE;
 		typec_headset_with_analog = 0;
-		letv_cdla_with_analog = 0;
 		typec_vbus_vconn_state = false;
 		if (letv_typec_plug_state)
 			letv_typec_plug_state = false;
@@ -1099,7 +1096,6 @@ static int cyccg_sync_ap_status(struct cyccg *cyccg,
 		if (typec_headset_with_analog != -1) {
 			pr_info("%s: clear type-c connect state!\n", __func__);
 			typec_headset_with_analog = -1;
-			letv_cdla_with_analog = -1;
 		}
 		//notify audio module for headset plug out
 		if (cyccg_analog_headset_plugin) {
@@ -2998,6 +2994,37 @@ static void cyccg_queue_vdm_work(struct cyccg *cyccg)
 #endif
 
 struct device *g_cyccg_device;
+static ssize_t cyccg_usb_audio_show(struct device *dev,
+                        struct device_attribute *attr, char *buf)
+{
+	int rv = 0;
+	bool if_letv = false;
+	int pid;
+
+	usb_audio_if_letv(&if_letv,&pid);
+	if (if_letv)
+	    rv = scnprintf(buf, PAGE_SIZE, "%d\n", if_letv);
+	else
+	    rv = scnprintf(buf, PAGE_SIZE, "%d\n", 0);
+
+	return rv;
+}
+
+static ssize_t cyccg_usb_audio_pid_show(struct device *dev,
+                        struct device_attribute *attr, char *buf)
+{
+	int rv = 0;
+	bool if_letv = false;
+	int pid;
+
+	usb_audio_if_letv(&if_letv,&pid);
+	if (if_letv)
+	    rv = scnprintf(buf, PAGE_SIZE, "0x%x\n", pid);
+	else
+	    rv = scnprintf(buf, PAGE_SIZE, "%d\n", 0);
+
+	return rv;
+}
 
 static ssize_t cyccg_dev_id_show(struct device *dev,
                         struct device_attribute *attr, char *buf)
@@ -3019,6 +3046,8 @@ static ssize_t cyccg_dev_id_show(struct device *dev,
 
 static struct device_attribute cyccg_cclogic_attrs[] = {
 	__ATTR(devid, S_IRUGO, cyccg_dev_id_show,NULL),
+	__ATTR(usb_audio, S_IRUGO, cyccg_usb_audio_show,NULL),
+	__ATTR(usb_audio_pid, S_IRUGO, cyccg_usb_audio_pid_show,NULL)
 };
 
 /* This routine must be called with @cyccgdev_lock acquired. */
@@ -5538,8 +5567,6 @@ static int cyccg_init_gpio(struct cyccg *cyccg, int init_gpio)
 		}
 		gpio_direction_output(cyccg->pdata->external_5v_en_gpio, 1);
 		gpio_set_value(cyccg->pdata->external_5v_en_gpio, 1);
-		mdelay(1);
-		gpio_set_value(cyccg->pdata->external_5v_en_gpio, 0);
 	}
 
 	goto out;
