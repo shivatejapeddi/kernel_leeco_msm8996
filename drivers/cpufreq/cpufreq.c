@@ -628,10 +628,12 @@ static ssize_t store_##file_name					\
 	int ret;							\
 	struct cpufreq_policy new_policy;				\
 									\
-	if (&policy->object == &policy->min)				\
-		return count;						\
+	ret = cpufreq_get_policy(&new_policy, policy->cpu);		\
+	if (ret)							\
+		return -EINVAL;						\
 									\
-	memcpy(&new_policy, policy, sizeof(*policy));			\
+	new_policy.min = new_policy.user_policy.min;			\
+	new_policy.max = new_policy.user_policy.max;			\
 									\
 	ret = sscanf(buf, "%u", &new_policy.object);			\
 	if (ret != 1)							\
