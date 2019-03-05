@@ -405,7 +405,6 @@ struct ccg_version {
 #define CCG_STATUS_ATTACHED_DEV_TYPE_NOTHING			0
 #define CCG_STATUS_ATTACHED_DEV_TYPE_UFP			1
 #define CCG_STATUS_ATTACHED_DEV_TYPE_DFP			2
-#define CCG_STATUS_ATTACHED_DEV_TYPE_DEBUG_ACCESSORY		3
 #define CCG_STATUS_ATTACHED_DEV_TYPE_AUDIO_ACCESSORY		4
 #define CCG_STATUS_ATTACHED_DEV_TYPE_POWERED_ACCESSORY		5
 #define CCG_STATUS_ATTACHED_DEV_TYPE_UNSUPPORTED_ACCESSORY	6
@@ -1220,17 +1219,6 @@ static int cyccg_sync_ap_status(struct cyccg *cyccg,
 			letv_pd_set_usb_mode(LETV_USB_UFP_MODE);
 //letv_pd e
 			break;
-		case CCG_STATUS_ATTACHED_DEV_TYPE_DEBUG_ACCESSORY:
-			cyccg_dbg("%s: attached_dev_type: DEBUG_ACCESSORY.\n",
-				  __func__);
-			/* TODO: if supports it. */
-			pr_info("cyccg switch uart_sw to uart mode\n");
-			gpio_set_value(cyccg_pdata->gpio_uart_sw, 0);
-			gpio_set_value(cyccg_pdata->gpio_ad_sel, 0);
-
-			cyccg_pdata->mode = DEBUG_MODE;
-			cclogic_updata_port_state(4);
-			break;
 		case CCG_STATUS_ATTACHED_DEV_TYPE_AUDIO_ACCESSORY:
 			cyccg_dbg("%s: attached_dev_type: AUDIO_ACCESSORY.\n",
 				  __func__);
@@ -1906,7 +1894,6 @@ static char dev_type[][24] = {
 	"NOTHING",
 	"Sink",
 	"Source",
-	"DEBUG_ACCESSORY",
 	"AUDIO_ACCESSORY",
 	"POWERED_ACCESSORY",
 	"UNSUPPORTED_ACCESSORY",
