@@ -745,9 +745,8 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 
 	if (boost < -100 || boost > 100)
 		return -EINVAL;
-    if (!memcmp(current->comm, "perfd", 6) || (current->pid == 1))
-        return 0;
-    boost_pct = boost;
+	boost_pct = boost;
+
 	/*
 	 * Update threshold params for Performance Boost (B)
 	 * and Performance Constraint (C) regions.
