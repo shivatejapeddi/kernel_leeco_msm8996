@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -79,6 +79,7 @@ typedef enum {
     GEN_PARAM_MODULATED_DTIM,
     GEN_PARAM_CAPTURE_TSF,
     GEN_PARAM_RESET_TSF_GPIO,
+    GEN_PARAM_PS_TDCC,
     GEN_PDEV_MONITOR_MODE,
 } GEN_PARAM;
 
@@ -137,7 +138,15 @@ bool wma_check_scan_in_progress(WMA_HANDLE handle);
 int wma_runtime_suspend_req(WMA_HANDLE handle);
 int wma_runtime_resume_req(WMA_HANDLE handle);
 #endif
-
+#ifdef FEATURE_PBM_MAGIC_WOW
+/**
+ * wma_wow_get_pbm_mp_reason() - API to get parsed wow reason
+ * @vos_context: handle of vos context
+ *
+ * Return: enum pbm_mp_reason
+ */
+enum pbm_mp_reason wma_wow_get_pbm_mp_reason(void *vos_context);
+#endif
 int wma_get_client_count(WMA_HANDLE handle);
 int wma_set_peer_param(void *wma_ctx, u_int8_t *peer_addr, u_int32_t param_id,
 			u_int32_t param_value, u_int32_t vdev_id);
@@ -181,5 +190,7 @@ VOS_STATUS wma_set_tx_power_scale_decr_db(uint8_t vdev_id, int value);
 void wma_tx_failure_cb(void *ctx, uint32_t num_msdu,
 		       uint8_t tid, uint32_t status);
 
-VOS_STATUS wma_set_ac_txq_optimize(void *wda_handle, uint8_t *value);
+VOS_STATUS wma_set_ac_txq_optimize(void *wda_handle, uint8_t value);
+VOS_STATUS wma_set_rx_antanna(void *wma_handle, uint8_t pdev_id,
+			      uint32_t matrix);
 #endif

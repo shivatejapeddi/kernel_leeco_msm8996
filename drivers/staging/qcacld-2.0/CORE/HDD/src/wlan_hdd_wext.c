@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -321,6 +321,7 @@ typedef enum eMonFilterType{
 #define WE_GET_TEMPERATURE                        56
 #define WE_GET_FW_STATUS                          57
 #define WE_CAP_TSF                                58
+#define WE_PBM_MP_GET_REASON                      59
 
 /* Private ioctls and their sub-ioctls */
 #define WLAN_PRIV_SET_INT_GET_INT                 (SIOCIWFIRSTPRIV + 2)
@@ -501,6 +502,7 @@ typedef enum eMonFilterType{
 #define WLAN_STATS_TX_UC_BYTE_CNT                 19
 #define WLAN_STATS_TX_MC_BYTE_CNT                 20
 #define WLAN_STATS_TX_BC_BYTE_CNT                 21
+#define WE_SET_PS_TDCC                            22
 
 #define FILL_TLV(__p, __type, __size, __val, __tlen) do {           \
         if ((__tlen + __size + 2) < WE_MAX_STR_LEN)                 \
@@ -922,6 +924,10 @@ void hdd_wlan_get_version(hdd_adapter_t *pAdapter, union iwreq_data *wrqu,
 
     hdd_context_t *pHddContext;
     int i = 0;
+#ifdef CLD_REGDB
+    struct wiphy *wiphy = NULL;
+    int j;
+#endif
 
     pHddContext = WLAN_HDD_GET_CTX(pAdapter);
     if (!pHddContext) {
@@ -969,6 +975,21 @@ void hdd_wlan_get_version(hdd_adapter_t *pAdapter, union iwreq_data *wrqu,
                 CRMId,
                 pHWversion);
     }
+
+#ifdef CLD_REGDB
+    wiphy = pHddContext->wiphy;
+    for (i = 0; i < IEEE80211_NUM_BANDS; i++) {
+        if (NULL == wiphy->bands[i])
+            continue;
+
+        for (j = 0; j < wiphy->bands[i]->n_channels; j++) {
+            struct ieee80211_supported_band *band = wiphy->bands[i];
+            printk("[CLD-REGDB-DEBUG]: channel %d flags 0x%x\n",
+                   band->channels[j].center_freq, band->channels[j].flags);
+        }
+    }
+#endif
+
 error:
     return;
 }
@@ -7995,6 +8016,14 @@ static int __iw_setnone_getint(struct net_device *dev,
             ret = hdd_capture_tsf(pAdapter, (uint32_t *)value, 1);
             break;
         }
+#ifdef FEATURE_PBM_MAGIC_WOW
+        case WE_PBM_MP_GET_REASON:
+        {
+            *value = (uint32_t)wma_wow_get_pbm_mp_reason(wmapvosContext) & 0xFF;
+            hddLog(LOGE, "PBM wow reason %d", *value);
+            break;
+        }
+#endif
         default:
         {
            hddLog(LOGE, "Invalid IOCTL get_value command %d", value[0]);
@@ -9156,8 +9185,13 @@ static int __iw_set_var_ints_getnone(struct net_device *dev,
                     return -EINVAL;
                 }
 
-                if (apps_args[0] < 0 || apps_args[0] > 1 || apps_args[1] < 0
-                    || apps_args[2] <= 10000 || apps_args[3] < 0 || apps_args[4] < 0
+                if ((0 == apps_args[0]) && (0 == apps_args[1])
+                    && (0 == apps_args[2]) && (0 == apps_args[3])
+                    && (0 == apps_args[4]) && (0 == apps_args[5])) {
+                    hddLog(LOGE, FL("setHpcsParams: reset params"));
+                } else if (apps_args[0] < 0 || apps_args[0] > 1
+                    || apps_args[1] < 0 || apps_args[2] <= 10000
+                    || apps_args[3] < 0 || apps_args[4] < 0
                     || apps_args[5] < 10000) {
                     hddLog(LOGE, FL("setHpcsParams: Invalid values"));
                     return -EINVAL;
@@ -11431,6 +11465,27 @@ VOS_STATUS iw_set_power_params(struct net_device *dev, struct iw_request_info *i
   return VOS_STATUS_SUCCESS;
 }/*iw_set_power_params*/
 
+int wlan_hdd_process_tdcc_ps(hdd_adapter_t *adapter, int enable, int percentage)
+{
+	static int32_t ps_tdcc_enabled = 0;
+
+	if (enable !=0 && enable != 1) {
+		hddLog(LOGE, "Invalid tdcc enable/disable");
+		return -EINVAL;
+	}
+	if (percentage < 0 || percentage > 100) {
+		hddLog(LOGE, "Invalid tdcc duty cycle percentage");
+		return -EINVAL;
+	}
+	if (enable == ps_tdcc_enabled)
+		return 0;
+
+	ps_tdcc_enabled = enable;
+	return process_wma_set_command_twoargs((int)adapter->sessionId,
+					       (int)GEN_PARAM_PS_TDCC,
+					       enable, percentage, GEN_CMD);
+}
+
 static int __iw_set_two_ints_getnone(struct net_device *dev,
                                      struct iw_request_info *info,
                                      union iwreq_data *wrqu, char *extra)
@@ -11471,6 +11526,9 @@ static int __iw_set_two_ints_getnone(struct net_device *dev,
 
         break;
 #endif
+    case WE_SET_PS_TDCC:
+	ret = wlan_hdd_process_tdcc_ps(pAdapter, value[1], value[2]);
+	break;
     case WE_SET_MON_MODE_CHAN:
         /*
          * TODO: Remove this private implementation use standard
@@ -12806,11 +12864,19 @@ static const struct iw_priv_args we_private_args[] = {
     {   WE_DUMP_DP_TRACE_LEVEL,
         IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 2,
         0, "dump_dp_trace"},
+    {   WE_SET_PS_TDCC,
+        IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 2,
+	0, "set_ps_tdcc" },
 #ifdef FEATURE_PBM_MAGIC_WOW
     {
         WE_SET_WOW_START,
         IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
         0, "wow_start" },
+    {
+        WE_PBM_MP_GET_REASON,
+        0,
+        IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
+        "get_wow_reason"},
 #endif
     {
         WLAN_PRIV_SET_FTIES,

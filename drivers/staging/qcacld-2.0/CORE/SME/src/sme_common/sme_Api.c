@@ -1899,6 +1899,9 @@ eHalStatus sme_UpdateConfig(tHalHandle hHal, tpSmeConfigParams pSmeConfigParams)
    pMac->sta_change_cc_via_beacon =
          pSmeConfigParams->sta_change_cc_via_beacon;
 
+   pMac->mcs_tx_force2chain =
+         pSmeConfigParams->mcs_tx_force2chain;
+
    return status;
 }
 
@@ -2351,21 +2354,16 @@ eHalStatus sme_handle_update_pwr_ind(tHalHandle hal_ptr, uint32_t pesession_id)
 	  cfgGetRegulatoryMaxTransmitPower(mac_ptr,
 					   pesession_ptr->currentOperChannel);
 	maxTxPower = VOS_MIN(regMax, mac_ptr->roam.configParam.nTxPowerCap);
-	if (maxTxPower != pesession_ptr->maxTxPower) {
-		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
-			  "updating new maxTx power %d to HAL from old pwr %d",
-			  maxTxPower, pesession_ptr->maxTxPower);
-		if(limSendSetMaxTxPowerReq(mac_ptr,
-					   maxTxPower,
-					   pesession_ptr) == eSIR_SUCCESS)
-			pesession_ptr->maxTxPower = maxTxPower;
-		else {
-			VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-				  "Set max txpwr req fail");
-		}
-	} else {
+	VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_INFO,
+		  "updating new maxTx power %d to HAL from old pwr %d",
+		  maxTxPower, pesession_ptr->maxTxPower);
+	if(limSendSetMaxTxPowerReq(mac_ptr,
+				   maxTxPower,
+				   pesession_ptr) == eSIR_SUCCESS)
+		pesession_ptr->maxTxPower = maxTxPower;
+	else {
 		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
-			  "no change on current max txpwr %d", maxTxPower);
+			  "Set max txpwr req fail");
 	}
 
 	return eHAL_STATUS_SUCCESS;
@@ -5179,10 +5177,12 @@ eHalStatus sme_GetConfigParam(tHalHandle hHal, tSmeConfigParams *pParam)
               pMac->roam.configParam.sta_roam_policy.dfs_mode;
       pParam->csrConfig.sta_roam_policy_params.skip_unsafe_channels =
               pMac->roam.configParam.sta_roam_policy.skip_unsafe_channels;
+      pParam->snr_monitor_enabled = pMac->snr_monitor_enabled;
       pParam->sub20_config_info = pMac->sub20_config_info;
       pParam->sub20_channelwidth = pMac->sub20_channelwidth;
       pParam->sub20_dynamic_channelwidth = pMac->sub20_dynamic_channelwidth;
       pParam->sta_change_cc_via_beacon = pMac->sta_change_cc_via_beacon;
+      pParam->mcs_tx_force2chain = pMac->mcs_tx_force2chain;
       pParam->csrConfig.gStaLocalEDCAEnable =
               pMac->roam.configParam.gStaLocalEDCAEnable;
 #if defined WLAN_FEATURE_VOWIFI
@@ -8455,6 +8455,68 @@ eHalStatus sme_ConfigureResumeReq( tHalHandle hHal,
         sme_ReleaseGlobalLock( &pMac->sme );
     }
     return(status);
+}
+
+/**
+ * sme_prepare_mgmt_tx() - Prepares mgmt frame
+ * @hal: The handle returned by mac_open
+ * @session_id: session id
+ * @buf: pointer to frame
+ * @len: frame length
+ *
+ * Return: eHalStatus
+ */
+static eHalStatus sme_prepare_mgmt_tx(tHalHandle hal, uint8_t session_id,
+					const uint8_t *buf, uint32_t len)
+{
+	eHalStatus status = eHAL_STATUS_SUCCESS;
+	VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
+	vos_msg_t vos_message;
+	struct sir_mgmt_msg *msg;
+	uint16_t msg_len;
+
+	VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_DEBUG,
+		  ("prepares auth frame"));
+
+	msg_len = sizeof(*msg) + len;
+	msg = vos_mem_malloc(msg_len);
+	if (msg == NULL) {
+		status = eHAL_STATUS_FAILED_ALLOC;
+	} else {
+		msg->type = eWNI_SME_SEND_MGMT_FRAME_TX;
+		msg->msg_len = msg_len;
+		msg->session_id = session_id;
+		msg->data = (uint8_t *)msg + sizeof(*msg);
+		vos_mem_copy(msg->data, buf, len);
+		vos_message.bodyptr = msg;
+		vos_message.type =  eWNI_SME_SEND_MGMT_FRAME_TX;
+		vos_status = vos_mq_post_message(VOS_MQ_ID_PE,
+						 &vos_message);
+		if (!VOS_IS_STATUS_SUCCESS(vos_status)) {
+			vos_mem_free(msg);
+			status = eHAL_STATUS_FAILURE;
+		}
+	}
+
+	return status;
+}
+
+eHalStatus sme_send_mgmt_tx(tHalHandle hal, uint8_t session_id,
+				const uint8_t *buf, uint32_t len)
+{
+	eHalStatus status = eHAL_STATUS_SUCCESS;
+	tpAniSirGlobal mac = PMAC_STRUCT(hal);
+
+	MTRACE(vos_trace(VOS_MODULE_ID_SME,
+		TRACE_CODE_SME_RX_HDD_SEND_MGMT_TX, session_id, 0));
+
+	status = sme_AcquireGlobalLock(&mac->sme);
+	if (HAL_STATUS_SUCCESS(status)) {
+		status = sme_prepare_mgmt_tx(hal, session_id, buf, len);
+		sme_ReleaseGlobalLock(&mac->sme);
+	}
+
+	return status;
 }
 
 #ifdef WLAN_FEATURE_EXTWOW_SUPPORT
@@ -14681,12 +14743,12 @@ eHalStatus sme_set_cts2self_for_p2p_go(tHalHandle hal_handle)
  * @value                          reference to the value
  * Return: hal_status
  */
-eHalStatus sme_set_ac_txq_optimize(tHalHandle hal_handle, uint8_t *value)
+eHalStatus sme_set_ac_txq_optimize(tHalHandle hal_handle, uint8_t value)
 {
 	eHalStatus status = eHAL_STATUS_SUCCESS;
 	vos_msg_t vos_msg;
 
-	vos_msg.bodyptr = value;
+	vos_msg.bodyval = value;
 	vos_msg.type = WDA_SET_AC_TXQ_OPTIMIZE;
 	if (!VOS_IS_STATUS_SUCCESS(vos_mq_post_message(VOS_MODULE_ID_WDA,
 						       &vos_msg))) {
@@ -17073,6 +17135,49 @@ eHalStatus sme_power_debug_stats_req(tHalHandle hal, void (*callback_fn)
 	return status;
 }
 #endif
+
+eHalStatus sme_ll_stats_set_primary_mac(tHalHandle hal,
+					uint8_t session_id,
+					tSirMacAddr mac_addr)
+{
+	eHalStatus status    = eHAL_STATUS_SUCCESS;
+	VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
+	tpAniSirGlobal mac  = PMAC_STRUCT(hal);
+	vos_msg_t message;
+	struct hal_primary_params *primary_peer;
+
+	primary_peer = vos_mem_malloc(sizeof(*primary_peer));
+	if (!primary_peer) {
+		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
+			  "%s: Fail to alloc mem", __func__);
+		return eHAL_STATUS_FAILURE;
+	}
+
+	vos_mem_copy(primary_peer->bssid, mac_addr, sizeof(tSirMacAddr));
+	primary_peer->session_id = session_id;
+
+	if (eHAL_STATUS_SUCCESS == sme_AcquireGlobalLock(&mac->sme)) {
+		/* Serialize the req through MC thread */
+		message.bodyptr = primary_peer;
+		message.type    = WDA_LINK_LAYER_STATS_SET_PRIMARY_PEER;
+		MTRACE(vos_trace(VOS_MODULE_ID_SME, TRACE_CODE_SME_TX_WDA_MSG,
+				 NO_SESSION, message.type));
+		vos_status = vos_mq_post_message(VOS_MQ_ID_WDA, &message);
+		if (!VOS_IS_STATUS_SUCCESS(vos_status)) {
+			VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
+				  "%s: not able to post WDA_LINK_LAYER_STATS_SET_PRIMARY_PEER",
+				  __func__);
+			vos_mem_free(primary_peer);
+			status = eHAL_STATUS_FAILURE;
+		}
+		sme_ReleaseGlobalLock(&mac->sme);
+	} else {
+		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
+			  FL("sme_AcquireGlobalLock error"));
+		status = eHAL_STATUS_FAILURE;
+	}
+	return status;
+}
 
 /**
  * eHalStatus sme_ll_stats_set_thresh - set threshold for mac counters
@@ -19998,6 +20103,42 @@ VOS_STATUS sme_set_btc_wlan_coex_tx_power(uint32_t coex_tx_power)
 	return vos_status;
 }
 
+#ifdef WMI_COEX_BTC_DUTYCYCLE
+VOS_STATUS sme_set_btc_coex_dutycycle(uint32_t coex_btc_PauseDuration,uint32_t coex_btc_UnPauseDuration)
+{
+	vos_msg_t msg = {0};
+	VOS_STATUS vos_status;
+	WMI_COEX_CONFIG_CMD_fixed_param *sme_interval;
+
+	sme_interval = vos_mem_malloc(sizeof(*sme_interval));
+	if (!sme_interval) {
+		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
+			  FL("Malloc failed"));
+		return VOS_STATUS_E_NOMEM;
+	}
+
+	sme_interval->config_type = WMI_COEX_CONFIG_BTC_DUTYCYCLE;
+	sme_interval->config_arg1 = coex_btc_PauseDuration;
+	sme_interval->config_arg2 = coex_btc_UnPauseDuration;
+	printk(KERN_ERR "ENTER sme_set_btc_coex_dutycycle = %d",coex_btc_PauseDuration);
+	printk(KERN_ERR "ENTER sme_set_btc_coex_dutycycle =%d",coex_btc_UnPauseDuration);
+
+	msg.type = WDA_BTC_BT_WLAN_INTERVAL_CMD;
+	msg.reserved = 0;
+	msg.bodyptr = sme_interval;
+
+	vos_status = vos_mq_post_message(VOS_MODULE_ID_WDA,&msg);
+	if (!VOS_IS_STATUS_SUCCESS(vos_status)) {
+		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
+			  FL("Not able to post message to WDA"));
+		vos_mem_free(sme_interval);
+		return VOS_STATUS_E_FAILURE;
+	}
+
+	return vos_status;
+}
+#endif
+
 /**
  * sme_send_disassoc_req_frame - send disassoc req
  * @hal: handler to hal
@@ -21071,3 +21212,82 @@ uint32_t sme_unpack_rsn_ie(tHalHandle hal, uint8_t *buf,
 
          return dot11fUnpackIeRSN(mac_ctx, buf, buf_len, rsn_ie);
 }
+
+#ifdef WLAN_FEATURE_SAE
+eHalStatus sme_handle_sae_msg(tHalHandle hal, uint8_t session_id,
+uint8_t sae_status)
+{
+	eHalStatus hal_status = eHAL_STATUS_SUCCESS;
+	tpAniSirGlobal mac = PMAC_STRUCT(hal);
+	struct sir_sae_msg *sae_msg;
+	vos_msg_t vos_message;
+	VOS_STATUS vos_status = VOS_STATUS_SUCCESS;
+
+	hal_status = sme_AcquireGlobalLock(&mac->sme);
+	if (HAL_STATUS_SUCCESS(hal_status)) {
+		sae_msg = vos_mem_malloc(sizeof(*sae_msg));
+		if (!sae_msg) {
+			hal_status = eHAL_STATUS_FAILED_ALLOC;
+			VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_ERROR,
+				"SAE: memory allocation failed");
+		} else {
+			sae_msg->message_type = eWNI_SME_SEND_SAE_MSG;
+			sae_msg->length = sizeof(*sae_msg);
+			sae_msg->session_id = session_id;
+			sae_msg->sae_status = sae_status;
+			vos_message.bodyptr = sae_msg;
+			vos_message.type =  eWNI_SME_SEND_SAE_MSG;
+			VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_DEBUG,
+				"SAE: sae_status %d session_id %d",
+				sae_msg->sae_status,
+				sae_msg->session_id);
+
+			vos_status = vos_mq_post_message(VOS_MQ_ID_PE,
+							 &vos_message);
+			if (!VOS_IS_STATUS_SUCCESS(vos_status)) {
+				vos_mem_free(sae_msg);
+				hal_status = eHAL_STATUS_FAILURE;
+			}
+		}
+		sme_ReleaseGlobalLock(&mac->sme);
+	}
+
+	return hal_status;
+}
+#endif
+
+#ifdef WLAN_SMART_ANTENNA_FEATURE
+/**
+ * sme_set_rx_antenna() - Set atenna matrix
+ * @hal: The handle returned by mac_open
+ * @matrix: smart antenaa matrix
+ *
+ * Return: HAL_STATUS
+ */
+eHalStatus sme_set_rx_antenna(tHalHandle hal,
+			      uint32_t matrix)
+{
+	vos_msg_t vos_message;
+	tpAniSirGlobal mac = PMAC_STRUCT(hal);
+	eHalStatus hal_status = eHAL_STATUS_SUCCESS;
+	VOS_STATUS vos_status;
+
+	hal_status = sme_AcquireGlobalLock(&mac->sme);
+	if (HAL_STATUS_SUCCESS(hal_status)) {
+		vos_message.type = WDA_SET_RX_ANTENNA;
+		vos_message.bodyval = matrix;
+		VOS_TRACE(VOS_MODULE_ID_SME, VOS_TRACE_LEVEL_DEBUG,
+			  FL("Smart Antenna Matrix=%d"),
+			  matrix);
+
+		vos_status = vos_mq_post_message(VOS_MQ_ID_WDA,
+						 &vos_message);
+		if (!VOS_IS_STATUS_SUCCESS(vos_status))
+			hal_status = eHAL_STATUS_FAILURE;
+
+		sme_ReleaseGlobalLock(&mac->sme);
+	}
+
+	return hal_status;
+}
+#endif

@@ -245,7 +245,7 @@ static u32 ufs_query_desc_max_size[] = {
 	QUERY_DESC_RFU_MAX_SIZE,
 	QUERY_DESC_GEOMETRY_MAZ_SIZE,
 	QUERY_DESC_POWER_MAX_SIZE,
-	QUERY_DESC_RFU_MAX_SIZE,
+	QUERY_DESC_HEALTH_MAX_SIZE,
 };
 
 enum {
@@ -3383,6 +3383,11 @@ int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size)
 	return ufshcd_read_desc(hba, QUERY_DESC_IDN_DEVICE, 0, buf, size);
 }
 
+int ufshcd_read_health_desc(struct ufs_hba *hba, u8 *buf, u32 size)
+{
+	return ufshcd_read_desc(hba, QUERY_DESC_IDN_HEALTH, 0, buf, size);
+}
+
 /**
  * ufshcd_read_string_desc - read string descriptor
  * @hba: pointer to adapter instance
@@ -5473,11 +5478,7 @@ static void ufshcd_exception_event_handler(struct work_struct *work)
 	hba = container_of(work, struct ufs_hba, eeh_work);
 
 	pm_runtime_get_sync(hba->dev);
-
 	ufshcd_scsi_block_requests(hba);
-
-
-
 	err = ufshcd_get_ee_status(hba, &status);
 	if (err) {
 		dev_err(hba->dev, "%s: failed to get exception status %d\n",
@@ -5491,11 +5492,7 @@ static void ufshcd_exception_event_handler(struct work_struct *work)
 		ufshcd_bkops_exception_event_handler(hba);
 
 out:
-
 	ufshcd_scsi_unblock_requests(hba);
-
-
-
 	pm_runtime_put_sync(hba->dev);
 	return;
 }
@@ -8551,10 +8548,59 @@ static void ufshcd_add_spm_lvl_sysfs_nodes(struct ufs_hba *hba)
 		dev_err(hba->dev, "Failed to create sysfs for spm_lvl\n");
 }
 
+static ssize_t ufshcd_health_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct ufs_hba *hba = dev_get_drvdata(dev);
+	int curr_len = 0, i, err;
+	int buff_len = QUERY_DESC_HEALTH_MAX_SIZE;
+	struct desc_field_offset *tmp;
+	u8 desc_buf[QUERY_DESC_HEALTH_MAX_SIZE];
+
+	struct desc_field_offset health_desc_field_name[] = {
+		{"bLength",		0x00, BYTE},
+		{"bDescriptorType",	0x01, BYTE},
+		{"bPreEOLInfo",		0x02, BYTE},
+		{"bDeviceLifeTimeEstA",	0x03, BYTE},
+		{"bDeviceLifeTimeEstB",	0x04, BYTE}
+	};
+
+	pm_runtime_get_sync(hba->dev);
+	err = ufshcd_read_health_desc(hba, desc_buf, buff_len);
+	pm_runtime_put_sync(hba->dev);
+
+	if (err)
+		return err;
+
+	curr_len = snprintf(buf, PAGE_SIZE, "ufs version: 0x%x\n",
+			    hba->ufs_version);
+	for (i = 0; i < ARRAY_SIZE(health_desc_field_name); ++i) {
+		tmp = &health_desc_field_name[i];
+		curr_len += snprintf(buf + curr_len, PAGE_SIZE - curr_len,
+				     "Health Descriptor[Byte offset 0x%x]: %s = 0x%x\n",
+				     tmp->offset,
+				     tmp->name,
+				     (u8)desc_buf[tmp->offset]);
+	}
+
+	return curr_len;
+}
+
+static void ufshcd_add_health_sysfs_nodes(struct ufs_hba *hba)
+{
+	hba->health_attr.show = ufshcd_health_show;
+	sysfs_attr_init(&hba->health_attr.attr);
+	hba->health_attr.attr.name = "health";
+	hba->health_attr.attr.mode = S_IRUGO;
+	if (device_create_file(hba->dev, &hba->health_attr))
+		dev_err(hba->dev, "Failed to create sysfs for health\n");
+}
+
 static inline void ufshcd_add_sysfs_nodes(struct ufs_hba *hba)
 {
 	ufshcd_add_rpm_lvl_sysfs_nodes(hba);
 	ufshcd_add_spm_lvl_sysfs_nodes(hba);
+	ufshcd_add_health_sysfs_nodes(hba);
 }
 
 /**

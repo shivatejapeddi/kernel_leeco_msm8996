@@ -131,6 +131,7 @@ typedef struct _smeConfigParams
     uint8_t      sub20_channelwidth;
     uint8_t      sub20_dynamic_channelwidth;
     bool         sta_change_cc_via_beacon;
+    bool         mcs_tx_force2chain;
 } tSmeConfigParams, *tpSmeConfigParams;
 
 typedef enum
@@ -4314,6 +4315,18 @@ eHalStatus sme_LLStatsGetReq (tHalHandle hHal,
 eHalStatus sme_ll_stats_set_thresh(tHalHandle hal,
 				   struct sir_ll_ext_stats_threshold *thresh);
 
+/**
+ * sme_ll_stats_set_primary_mac() - Set primary peer
+ * @hal: HAL handle
+ * @session_id: session ID
+ * @mac_addr: MAC address for the primary peer.
+ *
+ * return: eHAL_STATUS_SUCCESS for success. Others for failure.
+ */
+eHalStatus sme_ll_stats_set_primary_mac(tHalHandle hal,
+					uint8_t session_id,
+					tSirMacAddr mac_addr);
+
 /* ---------------------------------------------------------------------------
     \fn sme_SetLinkLayerStatsIndCB
     \brief  SME API to trigger the stats are available  after get request
@@ -4630,6 +4643,10 @@ VOS_STATUS sme_set_btc_wlan_coex_tx_power(uint32_t coex_tx_power);
 VOS_STATUS sme_configure_pta_coex(uint8_t coex_pta_config_enable, uint32_t coex_pta_config_param);
 #endif
 
+#ifdef WMI_COEX_BTC_DUTYCYCLE
+VOS_STATUS sme_set_btc_coex_dutycycle(uint32_t coex_btc_PauseDuration,uint32_t coex_btc_UnPauseDuration);
+#endif
+
 uint8_t    sme_is_any_session_in_connected_state(tHalHandle h_hal);
 
 typedef void ( *tSmeSetThermalLevelCallback)(void *pContext, u_int8_t level);
@@ -4866,7 +4883,7 @@ eHalStatus sme_clear_random_mac(tHalHandle hal, uint32_t session_id,
 eHalStatus sme_set_chip_pwr_save_fail_cb(tHalHandle hal, void (*cb)( void *,
 				struct chip_pwr_save_fail_detected_params *));
 
-eHalStatus sme_set_ac_txq_optimize(tHalHandle hal_handle, uint8_t *value);
+eHalStatus sme_set_ac_txq_optimize(tHalHandle hal_handle, uint8_t value);
 
 VOS_STATUS sme_mnt_filter_type_cmd(struct sme_mnt_filter_type_req *input);
 
@@ -4988,5 +5005,46 @@ typedef struct {
 } tSirHpcsPulseParmasConfig;
 
 eHalStatus sme_hpcs_pulse_params_conf_cmd(tHalHandle hHal, tSirHpcsPulseParmasConfig *pHpcsPulseParams);
+
+/**
+ * sme_send_mgmt_tx() - Sends mgmt frame from CSR to LIM
+ * @hal: The handle returned by mac_open
+ * @session_id: session id
+ * @buf: pointer to frame
+ * @len: frame length
+ *
+ * Return: eHalStatus
+ */
+eHalStatus sme_send_mgmt_tx(tHalHandle hal, uint8_t session_id,
+				const uint8_t *buf, uint32_t len);
+#ifdef WLAN_FEATURE_SAE
+/**
+ * sme_handle_sae_msg() - Sends SAE message received from supplicant
+ * @hal: The handle returned by mac_open
+ * @session_id: session id
+ * @sae_status: status of SAE authentication
+ *
+ * Return: HAL_STATUS
+ */
+eHalStatus sme_handle_sae_msg(tHalHandle hal, uint8_t session_id,
+				uint8_t sae_status);
+#else
+static inline eHalStatus sme_handle_sae_msg(tHalHandle hal, uint8_t session_id,
+				uint8_t sae_status)
+{
+	return eHAL_STATUS_SUCCESS;
+}
+#endif
+
+#ifdef WLAN_SMART_ANTENNA_FEATURE
+eHalStatus sme_set_rx_antenna(tHalHandle hal,
+                              uint32_t matrix);
+#else
+static inline eHalStatus sme_set_rx_antenna(tHalHandle hal,
+					    uint32_t matrix)
+{
+	return eHAL_STATUS_SUCCESS;
+}
+#endif
 
 #endif //#if !defined( __SME_API_H )

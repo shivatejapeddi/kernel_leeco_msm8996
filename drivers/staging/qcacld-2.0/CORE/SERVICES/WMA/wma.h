@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2019 The Linux Foundation. All rights reserved.
  *
  * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
  *
@@ -369,6 +369,27 @@ typedef enum {
         WMA_ROAM_PREAUTH_CHAN_CANCEL_REQUESTED,
         WMA_ROAM_PREAUTH_CHAN_COMPLETED
 } t_wma_roam_preauth_chan_state_t;
+
+#ifdef FEATURE_PBM_MAGIC_WOW
+/**
+ * enum pbm_mp_reason - enum of parsed wow reason
+ * @PBM_MP_REASON_MAGIC: wakeup by magic packet
+ * @PBM_MP_REASON_IPV4_UDP: wakeup by matched dst port ipv4 udp packet
+ * @PBM_MP_REASON_IPV4_TCP: wakeup by matched dst port ipv4 tcp packet
+ * @PBM_MP_REASON_IPV6_UDP: wakeup by matched dst port ipv6 udp packet
+ * @PBM_MP_REASON_IPV6_TCP: wakeup by matched dst port ipv6 tcp packet
+ * @PBM_MP_REASON_UNKNOWN: other reason
+ */
+enum pbm_mp_reason {
+	PBM_MP_REASON_MAGIC = 0,
+	PBM_MP_REASON_IPV4_UDP = 9,
+	PBM_MP_REASON_IPV4_TCP = 10,
+	PBM_MP_REASON_IPV6_UDP = 11,
+	PBM_MP_REASON_IPV6_TCP = 12,
+	PBM_MP_REASON_UNKNOWN = 255,
+};
+#endif
+
 /*
  * memory chunck allocated by Host to be managed by FW
  * used only for low latency interfaces like pcie
@@ -955,6 +976,10 @@ typedef struct wma_handle {
 	uint16_t max_mgmt_tx_fail_count;
 	uint32_t ccmp_replays_attack_cnt;
 
+#ifdef FEATURE_PBM_MAGIC_WOW
+	bool is_parsed_reason_set;
+	enum pbm_mp_reason wow_parsed_reason;
+#endif
 	struct wma_runtime_pm_context runtime_context;
 	uint32_t fine_time_measurement_cap;
 	bool bpf_enabled;
@@ -1850,6 +1875,17 @@ bool wma_is_vdev_up(uint8_t vdev_id);
 int wma_btc_set_bt_wlan_interval(tp_wma_handle wma_handle,
 			WMI_COEX_CONFIG_CMD_fixed_param *interval);
 
+/**
+ * wma_ps_set_tx_duty_cycle_control() - API to set tx duty cycle control param
+ * @wma_handle: wma handle
+ * @enable: tdcc enable or disable
+ * @tx_cycle_percentage: percentage of tx duty cycle
+ *
+ * Return: error code if fail, 0 if success
+ */
+int wma_ps_set_tx_duty_cycle_control(tp_wma_handle wma_handle,
+				     uint32_t enable,
+				     uint32_t tx_cycle_percentage);
 
 int wma_crash_inject(tp_wma_handle wma_handle, uint32_t type,
 			uint32_t delay_time_ms);
